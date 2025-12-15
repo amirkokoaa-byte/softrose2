@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { ref, onValue } from "firebase/database";
+import { ref, onValue, remove, update } from "firebase/database";
 import { User, InventoryRecord } from '../types';
 import { exportToCSV } from '../utils';
-import { FileSpreadsheet } from 'lucide-react';
+import { FileSpreadsheet, Trash2, Edit, Save, X } from 'lucide-react';
 
 interface Props {
     user: User;
@@ -14,14 +14,20 @@ interface Props {
 const InventoryLog: React.FC<Props> = ({ user, markets, theme }) => {
     const [logs, setLogs] = useState<InventoryRecord[]>([]);
     const [selectedMarket, setSelectedMarket] = useState('');
+    const [editingLog, setEditingLog] = useState<InventoryRecord | null>(null);
 
     useEffect(() => {
         const invRef = ref(db, 'inventory');
         onValue(invRef, (snapshot) => {
             const data = snapshot.val();
             if (data) {
-                const arr = Object.values(data) as InventoryRecord[];
+                const arr = Object.keys(data).map(key => ({
+                    id: key,
+                    ...data[key]
+                })) as InventoryRecord[];
                 setLogs(arr.sort((a,b) => b.timestamp - a.timestamp));
+            } else {
+                setLogs([]);
             }
         });
     }, []);
@@ -39,6 +45,32 @@ const InventoryLog: React.FC<Props> = ({ user, markets, theme }) => {
             }))
         );
         exportToCSV(data, 'Inventory_Report');
+    };
+
+    const handleDelete = async (id: string) => {
+        if(confirm("هل أنت متأكد من حذف هذا السجل؟")) {
+            await remove(ref(db, `inventory/${id}`));
+        }
+    };
+
+    const saveEdit = async () => {
+        if(!editingLog || !editingLog.id) return;
+        try {
+            await update(ref(db, `inventory/${editingLog.id}`), {
+                items: editingLog.items
+            });
+            setEditingLog(null);
+            alert("تم تعديل المخزون");
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const updateEditItem = (index: number, qty: number) => {
+        if(!editingLog) return;
+        const newItems = [...editingLog.items];
+        newItems[index].qty = qty;
+        setEditingLog({...editingLog, items: newItems});
     };
 
     return (
@@ -60,10 +92,16 @@ const InventoryLog: React.FC<Props> = ({ user, markets, theme }) => {
 
             <div className="space-y-4">
                 {filteredLogs.map((log, idx) => (
-                    <div key={idx} className={`p-4 rounded border ${theme === 'dark' ? 'bg-gray-800' : 'bg-white shadow'}`}>
+                    <div key={log.id} className={`p-4 rounded border ${theme === 'dark' ? 'bg-gray-800' : 'bg-white shadow'}`}>
                         <div className="flex justify-between font-bold border-b pb-2 mb-2 text-blue-500">
-                            <span>{log.market}</span>
-                            <span>{log.date}</span>
+                            <div>
+                                <span className="ml-2">{log.market}</span>
+                                <span className="opacity-50 font-normal">| {log.date}</span>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => setEditingLog(log)} className="text-blue-500 hover:text-blue-700"><Edit size={18} /></button>
+                                <button onClick={() => handleDelete(log.id!)} className="text-red-500 hover:text-red-700"><Trash2 size={18} /></button>
+                            </div>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
                             {(log.items || []).map((item, i) => (
@@ -76,6 +114,35 @@ const InventoryLog: React.FC<Props> = ({ user, markets, theme }) => {
                     </div>
                 ))}
             </div>
+
+            {/* Edit Modal */}
+            {editingLog && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 overflow-y-auto p-4">
+                    <div className={`w-full max-w-lg rounded-lg shadow-2xl p-6 ${theme === 'dark' ? 'bg-gray-800 text-white' : 'bg-white text-black'}`}>
+                        <div className="flex justify-between items-center mb-4 border-b pb-2">
+                            <h3 className="font-bold text-xl">تعديل المخزون</h3>
+                            <button onClick={() => setEditingLog(null)}><X /></button>
+                        </div>
+                        <div className="max-h-[60vh] overflow-y-auto space-y-2 mb-4">
+                            {editingLog.items.map((item, idx) => (
+                                <div key={idx} className="flex justify-between items-center p-2 border-b border-gray-100/10">
+                                    <span>{item.name}</span>
+                                    <input 
+                                        type="number" 
+                                        value={item.qty} 
+                                        onChange={e => updateEditItem(idx, Number(e.target.value))}
+                                        className="w-20 p-1 border rounded text-center text-black"
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => setEditingLog(null)} className="px-4 py-2 bg-gray-500 text-white rounded">إلغاء</button>
+                            <button onClick={saveEdit} className="px-4 py-2 bg-blue-600 text-white rounded flex items-center gap-2"><Save size={16}/> حفظ</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
