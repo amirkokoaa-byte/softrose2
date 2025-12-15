@@ -25,7 +25,6 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
         });
     }, []);
 
-    // Clear previous data when market/company changes (as requested)
     useEffect(() => {
         setItems([]);
     }, [selectedMarket, selectedCompany]);
@@ -53,7 +52,7 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
         
         await push(ref(db, 'competitor_prices'), data);
         alert("تم حفظ اسعار المنافسين");
-        setItems([]); // Clear after save
+        setItems([]); 
     };
 
     const addCompany = async () => {
@@ -64,70 +63,70 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
 
     const deleteMarket = async () => {
         if(user.role !== 'admin') return;
-        // This is complex as markets are stored as a simple list usually. 
-        // For now, we'll just show an alert as implemented fully requires ID tracking for markets
         alert("خاصية الحذف تحتاج تحديد الماركت من الاعدادات");
     };
 
     const categories = ['مناديل سحب (Facial)', 'مناديل مطبخ (Kitchen)', 'تواليت (Toilet)'];
 
-    const inputClass = "border p-1 rounded w-full text-black";
+    const inputClass = "border p-2 rounded w-full text-black";
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-6">
             <h2 className="text-2xl font-bold">تسجيل أسعار المنافسين</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white/5 p-4 rounded-lg">
                 <div>
-                    <label>الماركت</label>
+                    <label className="block mb-1">الماركت</label>
                     <div className="flex gap-2">
                         <select className={inputClass} value={selectedMarket} onChange={e => setSelectedMarket(e.target.value)}>
                             <option value="">اختر الماركت</option>
                             {markets.map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
                         {user.role === 'admin' && (
-                            <button onClick={deleteMarket} className="bg-red-500 text-white p-2 rounded"><Trash size={16}/></button>
+                            <button onClick={deleteMarket} className="bg-red-500 text-white p-2 rounded shrink-0"><Trash size={18}/></button>
                         )}
                     </div>
                 </div>
                 <div>
-                    <label>الشركة</label>
+                    <label className="block mb-1">الشركة</label>
                     <div className="flex gap-2">
                          <select className={inputClass} value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)}>
                             <option value="">اختر الشركة</option>
                             {companies.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                          {user.role === 'admin' && (
-                            <button onClick={addCompany} className="bg-blue-500 text-white p-2 rounded"><Plus size={16}/></button>
+                            <button onClick={addCompany} className="bg-blue-500 text-white p-2 rounded shrink-0"><Plus size={18}/></button>
                         )}
                     </div>
                 </div>
             </div>
 
             {categories.map(cat => (
-                <div key={cat} className="border p-4 rounded bg-white/5">
-                    <h3 className="font-bold mb-2 text-yellow-500">{cat}</h3>
-                    {items.map((item, idx) => item.category === cat && (
-                        <div key={idx} className="flex gap-2 mb-2">
-                            <input 
-                                placeholder="اسم الصنف" 
-                                className={inputClass} 
-                                value={item.name} 
-                                onChange={e => updateItem(idx, 'name', e.target.value)}
-                            />
-                            <input 
-                                type="number" 
-                                placeholder="السعر" 
-                                className={inputClass} 
-                                value={item.price || ''}
-                                onChange={e => updateItem(idx, 'price', e.target.value)}
-                            />
-                        </div>
-                    ))}
-                    <button onClick={() => addItem(cat)} className="text-sm bg-gray-200 text-black px-2 py-1 rounded">+ اضف منتج</button>
+                <div key={cat} className="border border-gray-200/20 p-4 rounded bg-white/5">
+                    <h3 className="font-bold mb-3 text-yellow-600 border-b border-gray-200/10 pb-2">{cat}</h3>
+                    <div className="space-y-3">
+                        {items.map((item, idx) => item.category === cat && (
+                            <div key={idx} className="flex flex-col md:flex-row gap-2">
+                                <input 
+                                    placeholder="اسم الصنف" 
+                                    className={`${inputClass} md:w-2/3`} 
+                                    value={item.name} 
+                                    onChange={e => updateItem(idx, 'name', e.target.value)}
+                                />
+                                <input 
+                                    type="number" 
+                                    placeholder="السعر" 
+                                    className={`${inputClass} md:w-1/3`} 
+                                    value={item.price || ''}
+                                    onChange={e => updateItem(idx, 'price', e.target.value)}
+                                />
+                            </div>
+                        ))}
+                    </div>
+                    <button onClick={() => addItem(cat)} className="mt-3 text-sm bg-gray-200 hover:bg-white text-black px-4 py-2 rounded shadow transition w-full md:w-auto">+ اضف منتج</button>
                 </div>
             ))}
 
-            <button onClick={handleSave} className="bg-green-600 w-full py-3 text-white rounded font-bold">حفظ الأسعار</button>
+            <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 w-full py-3 text-white rounded-lg font-bold shadow-lg text-lg transition">حفظ الأسعار</button>
         </div>
     );
 };

@@ -36,16 +36,9 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
     };
 
     const handleAddProduct = (category: string) => {
-        // Limit check handled by UI logic (user can keep clicking)
-        // But prompt requested "Can add up to X items". 
-        // We just add a blank row that allows selection
         addNewRow(category, '');
     };
 
-    // Pre-populate specific lists if needed, but user wants to add them dynamically or see them?
-    // The prompt says "Below the gray box [List of items]". 
-    // It implies these items should be visible to enter data.
-    // Let's initialize the form with ALL standard items for easy entry.
     useEffect(() => {
         const initialItems: ProductItem[] = [];
         allCategories.forEach(cat => {
@@ -81,7 +74,6 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
             return;
         }
 
-        // Filter out items with no sales (price 0)
         const soldItems = salesItems.filter(item => item.price > 0 || item.qty > 0);
         
         if (soldItems.length === 0) {
@@ -103,7 +95,6 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
             await set(newSaleRef, saleData);
             setNotification('تم حفظ المبيعات بنجاح!');
             
-            // Reset quantities/prices but keep structure
             setSalesItems(prev => prev.map(item => ({...item, price: 0, qty: 0})));
             setTimeout(() => setNotification(''), 3000);
         } catch (error) {
@@ -124,13 +115,13 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
         ? "border border-gray-300 p-2 rounded w-full text-black" 
         : "bg-white/10 border border-white/20 p-2 rounded w-full text-white placeholder-gray-400";
 
-    const sectionHeaderClass = "bg-gray-400 text-black font-bold p-2 rounded mt-4 mb-2 text-center";
+    const sectionHeaderClass = "bg-gray-400 text-black font-bold p-2 rounded mt-4 mb-2 text-center shadow-sm";
 
     return (
-        <div className="space-y-6">
-            <div className="flex justify-between items-center mb-6">
+        <div className="space-y-6 pb-20">
+            <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
                 <h2 className="text-2xl font-bold">المبيعات اليومية</h2>
-                <div className="text-xl font-bold bg-green-500 text-white px-4 py-1 rounded shadow">
+                <div className="text-xl font-bold bg-green-500 text-white px-4 py-2 rounded shadow w-full md:w-auto text-center">
                     الإجمالي: {calculateTotal()} ج.م
                 </div>
             </div>
@@ -138,7 +129,7 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
             {/* Market Selection */}
             <div className="flex items-end gap-2">
                 <div className="flex-1">
-                    <label className="block mb-1">اسم الماركت</label>
+                    <label className="block mb-1 font-semibold">اسم الماركت</label>
                     <select 
                         value={selectedMarket} 
                         onChange={(e) => setSelectedMarket(e.target.value)}
@@ -157,66 +148,70 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
             {allCategories.map(cat => (
                 <div key={cat.key}>
                     <div className={sectionHeaderClass}>{cat.name}</div>
-                    <div className="grid grid-cols-12 gap-2 mb-2 font-bold opacity-70 text-xs md:text-sm">
-                        <div className="col-span-4 md:col-span-5">الصنف</div>
+                    
+                    {/* Header Row */}
+                    <div className="grid grid-cols-12 gap-2 mb-2 font-bold opacity-70 text-xs md:text-sm px-1">
+                        <div className="col-span-5">الصنف</div>
                         <div className="col-span-3">السعر</div>
                         <div className="col-span-3">الكمية</div>
                         <div className="col-span-1"></div>
                     </div>
-                    {salesItems.filter(item => item.category === cat.key).map((item) => (
-                        <div key={item.id} className="grid grid-cols-12 gap-2 mb-2 items-center">
-                            <div className="col-span-4 md:col-span-5">
-                                {/* If it's a pre-defined item, show text, else show input if we added custom */}
-                                {cat.items.includes(item.name) ? (
-                                    <div className="p-2 text-sm">{item.name}</div>
-                                ) : (
+
+                    <div className="space-y-2">
+                        {salesItems.filter(item => item.category === cat.key).map((item) => (
+                            <div key={item.id} className="grid grid-cols-12 gap-2 items-center bg-black/5 p-1 rounded">
+                                <div className="col-span-5">
+                                    {cat.items.includes(item.name) ? (
+                                        <div className="p-2 text-xs md:text-sm font-medium leading-tight">{item.name}</div>
+                                    ) : (
+                                        <input 
+                                            type="text" 
+                                            value={item.name}
+                                            onChange={(e) => updateItem(item.id, 'name', e.target.value)}
+                                            className={`${inputClass} text-xs`} 
+                                            placeholder="اسم الصنف"
+                                        />
+                                    )}
+                                </div>
+                                <div className="col-span-3">
                                     <input 
-                                        type="text" 
-                                        value={item.name}
-                                        onChange={(e) => updateItem(item.id, 'name', e.target.value)}
-                                        className={inputClass} 
-                                        placeholder="اسم الصنف"
+                                        type="number" 
+                                        value={item.price || ''} 
+                                        onChange={(e) => updateItem(item.id, 'price', parseFloat(e.target.value))}
+                                        className={`${inputClass} text-center`}
+                                        placeholder="0"
                                     />
-                                )}
+                                </div>
+                                <div className="col-span-3">
+                                    <input 
+                                        type="number" 
+                                        value={item.qty || ''} 
+                                        onChange={(e) => updateItem(item.id, 'qty', parseFloat(e.target.value))}
+                                        className={`${inputClass} text-center`}
+                                        placeholder="0"
+                                    />
+                                </div>
+                                <div className="col-span-1 flex justify-center">
+                                    <button onClick={() => deleteItem(item.id)} className="text-red-500 hover:text-red-700 bg-red-100/50 p-1 rounded">
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
                             </div>
-                            <div className="col-span-3">
-                                <input 
-                                    type="number" 
-                                    value={item.price || ''} 
-                                    onChange={(e) => updateItem(item.id, 'price', parseFloat(e.target.value))}
-                                    className={inputClass}
-                                    placeholder="السعر"
-                                />
-                            </div>
-                            <div className="col-span-3">
-                                <input 
-                                    type="number" 
-                                    value={item.qty || ''} 
-                                    onChange={(e) => updateItem(item.id, 'qty', parseFloat(e.target.value))}
-                                    className={inputClass}
-                                    placeholder="الكمية"
-                                />
-                            </div>
-                            <div className="col-span-1 flex justify-center">
-                                <button onClick={() => deleteItem(item.id)} className="text-red-500 hover:text-red-700">
-                                    <Trash2 size={18} />
-                                </button>
-                            </div>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                     <button 
                         onClick={() => handleAddProduct(cat.key)}
-                        className="mt-2 text-sm bg-indigo-500/50 hover:bg-indigo-500 text-white px-3 py-1 rounded flex items-center gap-1 transition"
+                        className="mt-2 text-sm bg-indigo-500/10 hover:bg-indigo-500 hover:text-white text-indigo-500 border border-indigo-500 px-3 py-1 rounded flex items-center gap-1 transition w-full md:w-auto justify-center"
                     >
                         <Plus size={14} /> اضف منتج
                     </button>
                 </div>
             ))}
 
-            <div className="mt-8 flex justify-center">
+            <div className="mt-8 flex justify-center sticky bottom-4 z-10">
                 <button 
                     onClick={handleSave}
-                    className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg flex items-center gap-2 text-lg transform hover:scale-105 transition"
+                    className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-full shadow-xl flex items-center gap-2 text-lg transform hover:scale-105 transition w-full md:w-auto justify-center"
                 >
                     <Save size={24} />
                     حفظ وترحيل
@@ -224,7 +219,7 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
             </div>
 
             {notification && (
-                <div className="fixed bottom-4 left-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg animate-bounce">
+                <div className="fixed bottom-4 left-4 right-4 md:right-auto bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg animate-bounce text-center z-50">
                     {notification}
                 </div>
             )}

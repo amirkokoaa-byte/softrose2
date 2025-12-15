@@ -11,7 +11,7 @@ import InventoryLog from './components/InventoryLog';
 import CompetitorPrices from './components/CompetitorPrices';
 import CompetitorReports from './components/CompetitorReports';
 import Settings from './components/Settings';
-import { Home, LogOut, Phone, Wifi, WifiOff } from 'lucide-react';
+import { Home, LogOut, Phone, Wifi, WifiOff, Menu, X } from 'lucide-react';
 import { INITIAL_MARKETS } from './constants';
 
 // Default Settings
@@ -29,6 +29,7 @@ const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [markets, setMarkets] = useState<string[]>(INITIAL_MARKETS);
   const [isConnected, setIsConnected] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   // Realtime Listeners
   useEffect(() => {
@@ -102,41 +103,68 @@ const App: React.FC = () => {
       {/* Header */}
       <header className={`p-4 flex justify-between items-center ${theme === 'glass' ? 'bg-white/10' : theme === 'dark' ? 'bg-gray-800' : 'bg-white text-black shadow-md'}`}>
         <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold">{settings.appName}</h1>
+            {/* Mobile Menu Toggle */}
+            <button 
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
+                className="md:hidden p-2 rounded hover:bg-black/10 transition-colors"
+                aria-label="Toggle Menu"
+            >
+                {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+
+            <h1 className="text-xl md:text-2xl font-bold truncate max-w-[200px] md:max-w-none">{settings.appName}</h1>
+            
             <div className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${isConnected ? 'bg-green-500/20 text-green-600' : 'bg-red-500/20 text-red-600'}`} title={isConnected ? "متصل بالخادم" : "غير متصل"}>
                 {isConnected ? <Wifi size={14} /> : <WifiOff size={14} />}
                 <span className="hidden md:inline">{isConnected ? "متصل" : "غير متصل"}</span>
             </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 md:gap-4">
             {settings.whatsappNumber && (
-                <a href={`https://wa.me/${settings.whatsappNumber}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-full transition">
-                    <Phone size={18} />
-                    <span>تواصل واتس آب</span>
+                <a href={`https://wa.me/${settings.whatsappNumber}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-full transition text-xs md:text-sm">
+                    <Phone size={16} />
+                    <span className="hidden md:inline">تواصل واتس آب</span>
                 </a>
             )}
-            <div className="text-sm">
+            <div className="text-sm hidden md:block">
                 مرحباً، <span className="font-bold">{user.name}</span>
             </div>
-            <button onClick={handleLogout} className="text-red-500 hover:text-red-700">
+            <button onClick={handleLogout} className="text-red-500 hover:text-red-700 p-1">
                 <LogOut size={20} />
             </button>
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Mobile Overlay */}
+        {isSidebarOpen && (
+            <div 
+                className="absolute inset-0 bg-black/50 z-20 md:hidden backdrop-blur-sm"
+                onClick={() => setIsSidebarOpen(false)}
+            />
+        )}
+
         {/* Sidebar */}
-        <Sidebar 
-            currentView={currentView} 
-            setView={setCurrentView} 
-            user={user} 
-            theme={theme}
-            containerClass={theme === 'glass' ? 'bg-white/10 backdrop-blur-md' : theme === 'dark' ? 'bg-gray-800' : 'bg-gray-50 border-l border-gray-200'}
-        />
+        <div className={`
+            absolute top-0 bottom-0 right-0 z-30 h-full shadow-2xl transition-transform duration-300 ease-in-out
+            md:relative md:transform-none md:shadow-none
+            ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}
+        `}>
+            <Sidebar 
+                currentView={currentView} 
+                setView={(view) => {
+                    setCurrentView(view);
+                    setIsSidebarOpen(false);
+                }} 
+                user={user} 
+                theme={theme}
+                containerClass={`${theme === 'glass' ? 'bg-white/10 backdrop-blur-md' : theme === 'dark' ? 'bg-gray-800' : 'bg-gray-50 border-l border-gray-200'} h-full`}
+            />
+        </div>
 
         {/* Main Content */}
-        <main className="flex-1 p-4 overflow-y-auto">
-            <div className={`p-6 min-h-full ${getContainerClasses()} transition-all duration-300`}>
+        <main className="flex-1 p-2 md:p-4 overflow-y-auto w-full relative z-0">
+            <div className={`p-3 md:p-6 min-h-full ${getContainerClasses()} transition-all duration-300`}>
                 {currentView === 'sales' && <DailySales user={user} markets={markets} theme={theme} />}
                 {currentView === 'salesLog' && <SalesLog user={user} markets={markets} theme={theme} />}
                 {currentView === 'inventoryReg' && <InventoryRegistration user={user} markets={markets} theme={theme} />}
@@ -156,7 +184,7 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      <footer className="p-2 text-center text-xs opacity-70">
+      <footer className="p-2 text-center text-xs opacity-70 bg-black/5">
         مع تحيات المطور Amir Lamay
       </footer>
       
