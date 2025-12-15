@@ -11,7 +11,7 @@ import InventoryLog from './components/InventoryLog';
 import CompetitorPrices from './components/CompetitorPrices';
 import CompetitorReports from './components/CompetitorReports';
 import Settings from './components/Settings';
-import { Home, LogOut, Phone } from 'lucide-react';
+import { Home, LogOut, Phone, Wifi, WifiOff } from 'lucide-react';
 import { INITIAL_MARKETS } from './constants';
 
 // Default Settings
@@ -28,18 +28,20 @@ const App: React.FC = () => {
   const [theme, setTheme] = useState<'glass' | 'dark' | 'win10' | 'light'>('win10');
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [markets, setMarkets] = useState<string[]>(INITIAL_MARKETS);
+  const [isConnected, setIsConnected] = useState(false);
   
   // Realtime Listeners
   useEffect(() => {
     const settingsRef = ref(db, 'settings/app');
     const marketsRef = ref(db, 'settings/markets');
+    const connectedRef = ref(db, ".info/connected");
 
-    onValue(settingsRef, (snapshot) => {
+    const unsubscribeSettings = onValue(settingsRef, (snapshot) => {
       const data = snapshot.val();
       if (data) setSettings(data);
     });
 
-    onValue(marketsRef, (snapshot) => {
+    const unsubscribeMarkets = onValue(marketsRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         setMarkets(Object.values(data));
@@ -47,6 +49,16 @@ const App: React.FC = () => {
          setMarkets(INITIAL_MARKETS);
       }
     });
+
+    const unsubscribeConnected = onValue(connectedRef, (snap) => {
+        setIsConnected(!!snap.val());
+    });
+
+    return () => {
+        unsubscribeSettings();
+        unsubscribeMarkets();
+        unsubscribeConnected();
+    };
   }, []);
 
   const handleLogout = () => {
@@ -91,6 +103,10 @@ const App: React.FC = () => {
       <header className={`p-4 flex justify-between items-center ${theme === 'glass' ? 'bg-white/10' : theme === 'dark' ? 'bg-gray-800' : 'bg-white text-black shadow-md'}`}>
         <div className="flex items-center gap-4">
             <h1 className="text-2xl font-bold">{settings.appName}</h1>
+            <div className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${isConnected ? 'bg-green-500/20 text-green-600' : 'bg-red-500/20 text-red-600'}`} title={isConnected ? "متصل بالخادم" : "غير متصل"}>
+                {isConnected ? <Wifi size={14} /> : <WifiOff size={14} />}
+                <span className="hidden md:inline">{isConnected ? "متصل" : "غير متصل"}</span>
+            </div>
         </div>
         <div className="flex items-center gap-4">
             {settings.whatsappNumber && (

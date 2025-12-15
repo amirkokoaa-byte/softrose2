@@ -50,10 +50,8 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
             result = result.filter(s => s.market === filterMarket);
         }
 
-        // Permission check
-        if (!user.canViewAllSales && user.role !== 'admin') {
-            result = result.filter(s => s.employeeName === user.name);
-        }
+        // Removed restriction: Now all users can view all sales as requested.
+        // if (!user.canViewAllSales && user.role !== 'admin') { ... }
 
         setFilteredSales(result);
     }, [sales, filterDate, filterEmployee, filterMarket, user]);
