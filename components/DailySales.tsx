@@ -214,11 +214,13 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
                                         </div>
                                     </div>
 
-                                    {/* Delete Action */}
+                                    {/* Delete Action - Restricted to Admin */}
                                     <div className="col-span-1 flex justify-center">
-                                        <button onClick={() => deleteItem(item.id)} className="text-red-500 hover:text-red-700 bg-red-100/50 p-1.5 rounded">
-                                            <Trash2 size={16} />
-                                        </button>
+                                        {user.role === 'admin' && (
+                                            <button onClick={() => deleteItem(item.id)} className="text-red-500 hover:text-red-700 bg-red-100/50 p-1.5 rounded">
+                                                <Trash2 size={16} />
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             );
