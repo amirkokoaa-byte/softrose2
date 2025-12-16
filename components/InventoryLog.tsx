@@ -21,16 +21,22 @@ const InventoryLog: React.FC<Props> = ({ user, markets, theme }) => {
         onValue(invRef, (snapshot) => {
             const data = snapshot.val();
             if (data) {
-                const arr = Object.keys(data).map(key => ({
+                let arr = Object.keys(data).map(key => ({
                     id: key,
                     ...data[key]
                 })) as InventoryRecord[];
+
+                // DATA PRIVACY: Filter by user unless admin
+                if (user.role !== 'admin') {
+                    arr = arr.filter(l => l.employeeName === user.name);
+                }
+
                 setLogs(arr.sort((a,b) => b.timestamp - a.timestamp));
             } else {
                 setLogs([]);
             }
         });
-    }, []);
+    }, [user]);
 
     const filteredLogs = selectedMarket ? logs.filter(l => l.market === selectedMarket) : logs;
 
@@ -100,7 +106,9 @@ const InventoryLog: React.FC<Props> = ({ user, markets, theme }) => {
                             </div>
                             <div className="flex gap-2">
                                 <button onClick={() => setEditingLog(log)} className="text-blue-500 hover:text-blue-700"><Edit size={18} /></button>
-                                <button onClick={() => handleDelete(log.id!)} className="text-red-500 hover:text-red-700"><Trash2 size={18} /></button>
+                                {(user.role === 'admin' || user.name === log.employeeName) && (
+                                    <button onClick={() => handleDelete(log.id!)} className="text-red-500 hover:text-red-700"><Trash2 size={18} /></button>
+                                )}
                             </div>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">

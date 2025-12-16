@@ -1,3 +1,4 @@
+
 export interface ProductItem {
     id: string;
     name: string;
@@ -30,6 +31,7 @@ export interface CompetitorPrice {
     market: string;
     company: string;
     date: string;
+    employeeName?: string; // Added field
     items: { category: string; name: string; price: number }[];
 }
 
@@ -47,4 +49,11 @@ export interface AppSettings {
     tickerText: string;
     tickerEnabled: boolean;
     whatsappNumber: string;
+    // Permissions (defaults to false for sensitive data)
+    permissions: {
+        showSalesLog: boolean;
+        showInventoryLog: boolean;
+        showInventoryReg: boolean;
+        showCompetitorReports: boolean;
+    };
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { User } from '../types';
+import { User, AppSettings } from '../types';
 import { 
     ShoppingCart, FileText, PackagePlus, ClipboardList, 
     TrendingUp, BarChart2, Settings as SettingsIcon 
@@ -11,19 +11,38 @@ interface SidebarProps {
     user: User;
     theme: string;
     containerClass: string;
+    settings: AppSettings;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, user, theme, containerClass }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, user, theme, containerClass, settings }) => {
     
-    const menuItems = [
-        { id: 'sales', label: 'المبيعات اليومية', icon: ShoppingCart },
-        { id: 'salesLog', label: 'سجل المبيعات', icon: FileText },
-        { id: 'inventoryReg', label: 'تسجيل المخزون', icon: PackagePlus },
-        { id: 'inventoryLog', label: 'سجل المخزون', icon: ClipboardList },
-        { id: 'competitorPrices', label: 'أسعار المنافسين', icon: TrendingUp },
-        { id: 'competitorReports', label: 'تقارير المنافسين', icon: BarChart2 },
-        { id: 'settings', label: 'الإعدادات', icon: SettingsIcon },
+    // Define all possible items
+    const allItems = [
+        { id: 'sales', label: 'المبيعات اليومية', icon: ShoppingCart, alwaysShow: true },
+        { id: 'salesLog', label: 'سجل المبيعات', icon: FileText, permission: settings.permissions?.showSalesLog },
+        { id: 'inventoryReg', label: 'تسجيل المخزون', icon: PackagePlus, permission: settings.permissions?.showInventoryReg },
+        { id: 'inventoryLog', label: 'سجل المخزون', icon: ClipboardList, permission: settings.permissions?.showInventoryLog },
+        { id: 'competitorPrices', label: 'أسعار المنافسين', icon: TrendingUp, alwaysShow: true },
+        { id: 'competitorReports', label: 'تقارير المنافسين', icon: BarChart2, permission: settings.permissions?.showCompetitorReports },
+        { id: 'settings', label: 'الإعدادات', icon: SettingsIcon, adminOnly: true },
     ];
+
+    // Filter items logic
+    const menuItems = allItems.filter(item => {
+        // Admin sees everything
+        if (user.role === 'admin') return true;
+
+        // If item is admin only, hide from users
+        if (item.adminOnly) return false;
+
+        // If item has a specific permission check
+        if (item.permission !== undefined) {
+            return item.permission === true;
+        }
+
+        // Default to showing items marked as alwaysShow (like DailySales)
+        return true;
+    });
 
     const getButtonClass = (isActive: boolean) => {
         // Base classes for layout, spacing, and transition
@@ -79,7 +98,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, user, theme, co
             </nav>
             
             <div className={`mt-auto text-xs px-2 pt-4 border-t ${theme === 'dark' ? 'border-gray-700 text-gray-500' : 'border-gray-200/20 text-gray-400'}`}>
-                v1.0.0
+                v1.1.0
             </div>
         </aside>
     );

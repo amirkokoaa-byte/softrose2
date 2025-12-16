@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { ref, set, push, onValue, remove, update } from "firebase/database";
 import { User, AppSettings } from '../types';
-import { Save, Trash2, UserPlus, Shield, Edit2, Plus, X } from 'lucide-react';
+import { Save, Trash2, UserPlus, Shield, Edit2, Plus, X, Lock, Key } from 'lucide-react';
 
 interface Props {
     user: User;
@@ -22,6 +22,10 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
     const [companyList, setCompanyList] = useState<{key: string, val: string}[]>([]);
     const [newItemVal, setNewItemVal] = useState('');
     const [editingItem, setEditingItem] = useState<{key: string, val: string, type: 'market'|'company'} | null>(null);
+
+    // Password Change Modal State
+    const [passModal, setPassModal] = useState<{key: string, name: string} | null>(null);
+    const [newPass, setNewPass] = useState('');
 
     useEffect(() => {
         setLocalSettings(settings);
@@ -75,6 +79,16 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
         alert('تم حفظ الإعدادات');
     };
 
+    const updatePermission = (key: keyof AppSettings['permissions'], value: boolean) => {
+        setLocalSettings(prev => ({
+            ...prev,
+            permissions: {
+                ...prev.permissions,
+                [key]: value
+            }
+        }));
+    };
+
     // --- User Management ---
     const handleAddUser = async () => {
         if (!newUser.username || !newUser.password || !newUser.name) return alert("الرجاء ملء البيانات الأساسية");
@@ -86,6 +100,19 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
     const handleDeleteUser = async (key: string) => {
         if (confirm("حذف المستخدم؟")) {
             await remove(ref(db, `users/${key}`));
+        }
+    };
+
+    const handleUpdatePassword = async () => {
+        if(!passModal || !newPass) return alert("ادخل كلمة المرور الجديدة");
+        try {
+            await set(ref(db, `users/${passModal.key}/password`), newPass);
+            alert("تم تغيير كلمة المرور بنجاح");
+            setPassModal(null);
+            setNewPass('');
+        } catch (e) {
+            console.error(e);
+            alert("حدث خطأ");
         }
     };
 
@@ -160,6 +187,51 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                         />
                     </div>
                 </div>
+
+                {/* Permissions Section */}
+                <h4 className="font-bold mt-6 mb-3 flex items-center gap-2 border-t pt-4"><Lock size={18}/> صلاحيات العرض للمستخدمين</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-100 dark:bg-gray-900 p-4 rounded text-sm">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input 
+                            type="checkbox" 
+                            className="w-4 h-4"
+                            checked={localSettings.permissions?.showSalesLog || false}
+                            onChange={e => updatePermission('showSalesLog', e.target.checked)}
+                        />
+                        <span>عرض "سجل المبيعات" للموظفين</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input 
+                            type="checkbox" 
+                            className="w-4 h-4"
+                            checked={localSettings.permissions?.showInventoryReg || false}
+                            onChange={e => updatePermission('showInventoryReg', e.target.checked)}
+                        />
+                        <span>عرض "تسجيل المخزون" للموظفين</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input 
+                            type="checkbox" 
+                            className="w-4 h-4"
+                            checked={localSettings.permissions?.showInventoryLog || false}
+                            onChange={e => updatePermission('showInventoryLog', e.target.checked)}
+                        />
+                        <span>عرض "سجل المخزون" للموظفين</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input 
+                            type="checkbox" 
+                            className="w-4 h-4"
+                            checked={localSettings.permissions?.showCompetitorReports || false}
+                            onChange={e => updatePermission('showCompetitorReports', e.target.checked)}
+                        />
+                        <span>عرض "تقارير المنافسين" للموظفين</span>
+                    </label>
+                </div>
+
                 <button onClick={saveSettings} className="mt-4 bg-blue-600 text-white px-6 py-2 rounded flex items-center gap-2">
                     <Save size={18} /> حفظ الإعدادات
                 </button>
@@ -289,8 +361,19 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                                         {u.role === 'admin' ? <span className="bg-red-100 text-red-800 px-2 rounded flex items-center gap-1 w-fit"><Shield size={12}/> Admin</span> : 'مستخدم'}
                                     </td>
                                     <td className="p-2">{u.code}</td>
-                                    <td className="p-2">
-                                        <button onClick={() => handleDeleteUser(u.key)} className="text-red-500 hover:text-red-700">
+                                    <td className="p-2 flex gap-2">
+                                        <button 
+                                            onClick={() => setPassModal({key: u.key, name: u.name})} 
+                                            className="text-yellow-600 hover:text-yellow-800 bg-yellow-100 p-1 rounded"
+                                            title="تغيير كلمة المرور"
+                                        >
+                                            <Key size={16} />
+                                        </button>
+                                        <button 
+                                            onClick={() => handleDeleteUser(u.key)} 
+                                            className="text-red-600 hover:text-red-800 bg-red-100 p-1 rounded"
+                                            title="حذف المستخدم"
+                                        >
                                             <Trash2 size={16} />
                                         </button>
                                     </td>
@@ -300,17 +383,29 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                     </table>
                 </div>
             </div>
-
-            {/* Appearance */}
-            <div className={sectionClass}>
-                 <h3 className="text-xl font-bold mb-4 border-b pb-2">المظهر</h3>
-                 <div className="flex gap-4 flex-wrap">
-                     <button onClick={() => setTheme('win10')} className={`px-4 py-2 rounded border ${theme === 'win10' ? 'bg-blue-600 text-white' : ''}`}>Windows 10</button>
-                     <button onClick={() => setTheme('glass')} className={`px-4 py-2 rounded border ${theme === 'glass' ? 'bg-purple-600 text-white' : ''}`}>Glass</button>
-                     <button onClick={() => setTheme('dark')} className={`px-4 py-2 rounded border ${theme === 'dark' ? 'bg-gray-700 text-white' : ''}`}>Dark Mode</button>
-                     <button onClick={() => setTheme('light')} className={`px-4 py-2 rounded border ${theme === 'light' ? 'bg-gray-200 text-black' : ''}`}>Light</button>
-                 </div>
-            </div>
+            
+            {/* Change Password Modal */}
+            {passModal && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+                    <div className={`p-6 rounded-lg w-full max-w-sm shadow-2xl ${theme === 'dark' ? 'bg-gray-800 text-white' : 'bg-white text-black'}`}>
+                        <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                            <Key size={20} className="text-yellow-500" />
+                            تغيير كلمة مرور: <span className="text-blue-500">{passModal.name}</span>
+                        </h3>
+                        <input 
+                            type="text" 
+                            value={newPass} 
+                            onChange={e => setNewPass(e.target.value)}
+                            className="w-full border p-3 rounded text-black mb-6 bg-gray-50"
+                            placeholder="كلمة المرور الجديدة"
+                        />
+                        <div className="flex justify-end gap-3">
+                            <button onClick={() => setPassModal(null)} className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded transition">إلغاء</button>
+                            <button onClick={handleUpdatePassword} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold transition">حفظ التغيير</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

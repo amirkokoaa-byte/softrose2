@@ -25,16 +25,22 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
         });
         onValue(ref(db, 'competitor_prices'), s => {
             if(s.exists()) {
-                const arr = Object.keys(s.val()).map(key => ({
+                let arr = Object.keys(s.val()).map(key => ({
                     id: key,
                     ...s.val()[key]
-                }));
+                })) as CompetitorPrice[];
+
+                // DATA PRIVACY
+                if (user.role !== 'admin') {
+                    arr = arr.filter(d => d.employeeName === user.name);
+                }
+
                 setData(arr);
             } else {
                 setData([]);
             }
         });
-    }, []);
+    }, [user]);
 
     const filtered = data.filter(d => 
         (!selectedMarket || d.market === selectedMarket) &&
@@ -46,6 +52,7 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
             "الماركت": d.market,
             "الشركة": d.company,
             "التاريخ": d.date,
+            "بواسطة": d.employeeName || '-',
             "القسم": i.category,
             "المنتج": i.name,
             "السعر": i.price
@@ -101,10 +108,13 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
                             <div>
                                 <span>{record.company} @ {record.market}</span>
                                 <span className="text-sm opacity-70 mr-2">{record.date}</span>
+                                <span className="text-xs block text-gray-400">بواسطة: {record.employeeName}</span>
                             </div>
                             <div className="flex gap-2">
                                 <button onClick={() => setEditingReport(record)} className="text-blue-500 p-1"><Edit size={18}/></button>
-                                <button onClick={() => handleDelete(record.id!)} className="text-red-500 p-1"><Trash2 size={18}/></button>
+                                {(user.role === 'admin' || user.name === record.employeeName) && (
+                                     <button onClick={() => handleDelete(record.id!)} className="text-red-500 p-1"><Trash2 size={18}/></button>
+                                )}
                             </div>
                         </div>
                         <table className="w-full text-sm">

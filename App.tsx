@@ -11,7 +11,7 @@ import InventoryLog from './components/InventoryLog';
 import CompetitorPrices from './components/CompetitorPrices';
 import CompetitorReports from './components/CompetitorReports';
 import Settings from './components/Settings';
-import { Home, LogOut, Phone, Wifi, WifiOff, Menu, X } from 'lucide-react';
+import { Home, LogOut, Phone, Wifi, WifiOff, Menu, X, Palette } from 'lucide-react';
 import { INITIAL_MARKETS } from './constants';
 
 // Default Settings
@@ -19,7 +19,13 @@ const DEFAULT_SETTINGS: AppSettings = {
   appName: "Soft Rose Modern Trade",
   tickerText: "أهلاً بكم في نظام سوفت روز للتجارة الحديثة",
   tickerEnabled: true,
-  whatsappNumber: ""
+  whatsappNumber: "",
+  permissions: {
+    showSalesLog: true, 
+    showInventoryLog: false, // Hidden by default for users
+    showInventoryReg: false, // Hidden by default for users
+    showCompetitorReports: false // Hidden by default for users
+  }
 };
 
 const App: React.FC = () => {
@@ -30,6 +36,7 @@ const App: React.FC = () => {
   const [markets, setMarkets] = useState<string[]>(INITIAL_MARKETS);
   const [isConnected, setIsConnected] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [showThemeSelector, setShowThemeSelector] = useState(false);
   
   // Realtime Listeners
   useEffect(() => {
@@ -39,7 +46,10 @@ const App: React.FC = () => {
 
     const unsubscribeSettings = onValue(settingsRef, (snapshot) => {
       const data = snapshot.val();
-      if (data) setSettings(data);
+      if (data) {
+          // Merge with defaults to ensure permissions object exists if old data
+          setSettings({...DEFAULT_SETTINGS, ...data});
+      }
     });
 
     const unsubscribeMarkets = onValue(marketsRef, (snapshot) => {
@@ -126,6 +136,16 @@ const App: React.FC = () => {
                     <span className="hidden md:inline">تواصل واتس آب</span>
                 </a>
             )}
+            
+            {/* Theme Selector Trigger */}
+            <button 
+                onClick={() => setShowThemeSelector(true)}
+                className="p-2 rounded-full hover:bg-black/10 transition-colors" 
+                title="تغيير المظهر"
+            >
+                <Palette size={20} />
+            </button>
+
             <div className="text-sm hidden md:block">
                 مرحباً، <span className="font-bold">{user.name}</span>
             </div>
@@ -158,6 +178,7 @@ const App: React.FC = () => {
                 }} 
                 user={user} 
                 theme={theme}
+                settings={settings}
                 containerClass={`${theme === 'glass' ? 'bg-white/10 backdrop-blur-md' : theme === 'dark' ? 'bg-gray-800' : 'bg-gray-50 border-l border-gray-200'} h-full`}
             />
         </div>
@@ -187,6 +208,40 @@ const App: React.FC = () => {
       <footer className="p-2 text-center text-xs opacity-70 bg-black/5">
         مع تحيات المطور Amir Lamay
       </footer>
+
+      {/* Global Theme Selector Modal */}
+      {showThemeSelector && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowThemeSelector(false)}>
+              <div 
+                className={`p-6 rounded-xl shadow-2xl max-w-sm w-full ${theme === 'dark' ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`} 
+                onClick={e => e.stopPropagation()}
+              >
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-xl font-bold flex items-center gap-2"><Palette size={20} /> اختر مظهر التطبيق</h3>
+                      <button onClick={() => setShowThemeSelector(false)} className="opacity-50 hover:opacity-100"><X size={20}/></button>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                       <button onClick={() => {setTheme('win10'); setShowThemeSelector(false)}} className={`p-4 border-2 rounded-lg hover:border-blue-500 transition flex flex-col items-center gap-2 ${theme === 'win10' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-transparent bg-gray-100 dark:bg-gray-700'}`}>
+                          <div className="w-10 h-10 bg-[#0078D7] rounded shadow-md"></div>
+                          <span className="font-semibold">Windows 10</span>
+                       </button>
+                       <button onClick={() => {setTheme('glass'); setShowThemeSelector(false)}} className={`p-4 border-2 rounded-lg hover:border-purple-500 transition flex flex-col items-center gap-2 ${theme === 'glass' ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20' : 'border-transparent bg-gray-100 dark:bg-gray-700'}`}>
+                          <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded shadow-md"></div>
+                          <span className="font-semibold">Glass</span>
+                       </button>
+                       <button onClick={() => {setTheme('dark'); setShowThemeSelector(false)}} className={`p-4 border-2 rounded-lg hover:border-gray-500 transition flex flex-col items-center gap-2 ${theme === 'dark' ? 'border-gray-500 bg-gray-700 text-white' : 'border-transparent bg-gray-100 dark:bg-gray-700'}`}>
+                          <div className="w-10 h-10 bg-gray-900 rounded border border-gray-600 shadow-md"></div>
+                          <span className="font-semibold">Dark Mode</span>
+                       </button>
+                       <button onClick={() => {setTheme('light'); setShowThemeSelector(false)}} className={`p-4 border-2 rounded-lg hover:border-gray-400 transition flex flex-col items-center gap-2 ${theme === 'light' ? 'border-gray-400 bg-gray-200' : 'border-transparent bg-gray-100 dark:bg-gray-700'}`}>
+                          <div className="w-10 h-10 bg-gray-100 rounded border shadow-md"></div>
+                          <span className="font-semibold">Light</span>
+                       </button>
+                  </div>
+              </div>
+          </div>
+      )}
       
       <style>{`
         @keyframes marquee {

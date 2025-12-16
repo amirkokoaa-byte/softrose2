@@ -26,16 +26,22 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
         onValue(salesRef, (snapshot) => {
             const data = snapshot.val();
             if (data) {
-                const loadedSales: SaleRecord[] = Object.keys(data).map(key => ({
+                let loadedSales: SaleRecord[] = Object.keys(data).map(key => ({
                     id: key,
                     ...data[key]
                 }));
+                
+                // DATA PRIVACY: Filter by user unless admin or has specific permission
+                if (user.role !== 'admin' && !user.canViewAllSales) {
+                    loadedSales = loadedSales.filter(s => s.employeeName === user.name);
+                }
+
                 setSales(loadedSales.sort((a, b) => b.timestamp - a.timestamp));
             } else {
                 setSales([]);
             }
         });
-    }, []);
+    }, [user]);
 
     useEffect(() => {
         let result = sales;

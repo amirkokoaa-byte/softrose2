@@ -47,6 +47,7 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
             market: selectedMarket,
             company: selectedCompany,
             date: new Date().toLocaleDateString('ar-EG'),
+            employeeName: user.name, // Save employee name
             items: items.filter(i => i.name && i.price)
         };
         
