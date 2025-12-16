@@ -66,9 +66,10 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                 "الماركت": sale.market,
                 "الموظف": sale.employeeName,
                 "الصنف": item.name,
-                "السعر": item.price,
-                "الكمية": item.qty,
-                "الاجمالي": sale.total
+                "سعر القطعة": item.price,
+                "العدد": item.qty,
+                "الإجمالي للصنف": (Number(item.price) * Number(item.qty)) || 0,
+                "اجمالي الفاتورة": sale.total
             }))
         );
         exportToCSV(exportData, `Sales_Report_${new Date().toISOString().slice(0,10)}`);
@@ -85,8 +86,8 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
         // @ts-ignore
         newItems[index][field] = value;
         
-        // Recalculate total
-        const newTotal = newItems.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+        // Recalculate total based on (Price * Qty) logic
+        const newTotal = newItems.reduce((sum, item) => sum + ((Number(item.price) || 0) * (Number(item.qty) || 0)), 0);
         
         setEditingSale({
             ...editingSale,
@@ -101,7 +102,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
             await update(ref(db, `sales/${editingSale.id}`), {
                 items: editingSale.items,
                 total: editingSale.total,
-                market: editingSale.market // Allow market change if needed, but primarily items
+                market: editingSale.market 
             });
             setEditingSale(null);
             alert("تم تعديل الفاتورة بنجاح");
@@ -169,27 +170,31 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                                 )}
                             </div>
                         </div>
-                        <table className="w-full text-sm">
+                        <table className="w-full text-sm text-center">
                             <thead>
-                                <tr className="opacity-50 text-right">
-                                    <th>الصنف</th>
-                                    <th>الكمية</th>
-                                    <th>السعر</th>
+                                <tr className="opacity-50 border-b border-gray-500/20">
+                                    <th className="text-right pb-2">الصنف</th>
+                                    <th className="pb-2">سعر القطعة</th>
+                                    <th className="pb-2">العدد</th>
+                                    <th className="pb-2">الإجمالي</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {(sale.items || []).map((item, idx) => (
                                     <tr key={idx} className="border-b border-gray-100/10">
-                                        <td className="py-1">{item.name}</td>
-                                        <td>{item.qty}</td>
+                                        <td className="py-2 text-right">{item.name}</td>
                                         <td>{item.price}</td>
+                                        <td>{item.qty}</td>
+                                        <td className="font-bold text-gray-500 dark:text-gray-400">
+                                            {((Number(item.price) || 0) * (Number(item.qty) || 0)).toLocaleString()}
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
                             <tfoot>
-                                <tr className="font-bold">
-                                    <td colSpan={2} className="pt-2 text-left pl-4">الاجمالي:</td>
-                                    <td className="pt-2">{sale.total} ج.م</td>
+                                <tr className="font-bold text-lg">
+                                    <td colSpan={3} className="pt-2 text-left pl-4">إجمالي الفاتورة:</td>
+                                    <td className="pt-2 text-green-600">{sale.total.toLocaleString()} ج.م</td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -207,26 +212,35 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                         </div>
                         
                         <div className="max-h-[60vh] overflow-y-auto space-y-2 mb-4">
+                            <div className="grid grid-cols-12 gap-2 font-bold opacity-70 mb-2 px-1 text-center text-xs">
+                                <div className="col-span-5 text-right">الصنف</div>
+                                <div className="col-span-2">السعر</div>
+                                <div className="col-span-2">العدد</div>
+                                <div className="col-span-3">الاجمالي</div>
+                            </div>
                             {editingSale.items.map((item, idx) => (
                                 <div key={idx} className="grid grid-cols-12 gap-2 items-center border-b pb-2 border-gray-500/20">
-                                    <div className="col-span-6 text-sm font-bold">{item.name}</div>
-                                    <div className="col-span-3">
-                                        <label className="text-xs opacity-50 block">الكمية</label>
-                                        <input 
-                                            type="number" 
-                                            value={item.qty} 
-                                            onChange={e => handleEditItemChange(idx, 'qty', e.target.value)}
-                                            className="w-full p-1 border rounded text-black bg-gray-50"
-                                        />
-                                    </div>
-                                    <div className="col-span-3">
-                                        <label className="text-xs opacity-50 block">السعر</label>
+                                    <div className="col-span-5 text-sm font-bold truncate">{item.name}</div>
+                                    <div className="col-span-2">
                                         <input 
                                             type="number" 
                                             value={item.price} 
                                             onChange={e => handleEditItemChange(idx, 'price', e.target.value)}
-                                            className="w-full p-1 border rounded text-black bg-gray-50"
+                                            className="w-full p-1 border rounded text-black bg-gray-50 text-center text-sm"
+                                            placeholder="سعر"
                                         />
+                                    </div>
+                                    <div className="col-span-2">
+                                        <input 
+                                            type="number" 
+                                            value={item.qty} 
+                                            onChange={e => handleEditItemChange(idx, 'qty', e.target.value)}
+                                            className="w-full p-1 border rounded text-black bg-gray-50 text-center text-sm"
+                                            placeholder="عدد"
+                                        />
+                                    </div>
+                                    <div className="col-span-3 text-center text-sm font-bold">
+                                        {((Number(item.price) || 0) * (Number(item.qty) || 0)).toLocaleString()}
                                     </div>
                                 </div>
                             ))}
@@ -234,7 +248,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
 
                         <div className="flex justify-between items-center pt-4 border-t">
                              <div className="font-bold text-lg">
-                                الإجمالي الجديد: <span className="text-green-600">{editingSale.total} ج.م</span>
+                                الإجمالي الجديد: <span className="text-green-600">{editingSale.total.toLocaleString()} ج.م</span>
                              </div>
                              <div className="flex gap-2">
                                 <button onClick={() => setEditingSale(null)} className="px-4 py-2 bg-gray-300 text-black rounded hover:bg-gray-400">إلغاء</button>
