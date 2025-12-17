@@ -115,6 +115,15 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
             alert("حدث خطأ");
         }
     };
+    
+    // New function to update user code inline
+    const handleUpdateCode = async (key: string, newCode: string) => {
+        try {
+            await update(ref(db, `users/${key}`), { code: newCode });
+        } catch (e) {
+            console.error("Error updating code:", e);
+        }
+    };
 
     // --- List Management (Markets/Companies) ---
     const handleAddListItem = async (type: 'market' | 'company') => {
@@ -360,7 +369,18 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                                     <td className="p-2">
                                         {u.role === 'admin' ? <span className="bg-red-100 text-red-800 px-2 rounded flex items-center gap-1 w-fit"><Shield size={12}/> Admin</span> : 'مستخدم'}
                                     </td>
-                                    <td className="p-2">{u.code}</td>
+                                    <td className="p-2">
+                                        <input 
+                                            defaultValue={u.code}
+                                            onBlur={(e) => {
+                                                if (e.target.value !== u.code) {
+                                                     handleUpdateCode(u.key, e.target.value);
+                                                }
+                                            }}
+                                            className="w-24 p-1 rounded border border-gray-300 text-center text-black focus:border-blue-500 outline-none"
+                                            placeholder="-"
+                                        />
+                                    </td>
                                     <td className="p-2 flex gap-2">
                                         <button 
                                             onClick={() => setPassModal({key: u.key, name: u.name})} 
