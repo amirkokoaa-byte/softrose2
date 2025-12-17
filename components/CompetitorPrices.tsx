@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { ref, push, set, onValue, remove } from "firebase/database";
 import { User } from '../types';
-import { COMPANIES } from '../constants';
+import { COMPANIES, PRODUCTS_FACIAL, PRODUCTS_KITCHEN, PRODUCTS_TOILET } from '../constants';
 import { Save, Plus, Trash, Trash2, X } from 'lucide-react';
 
 interface Props {
@@ -36,6 +36,23 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
         return `competitor_templates/${safeUser}/${safeMarket}/${safeCompany}`;
     };
 
+    // Helper: Generate Default Soft Rose Items
+    const getSoftRoseDefaults = () => {
+        const defaultItems: {category: string, name: string, price: number}[] = [];
+        
+        PRODUCTS_FACIAL.forEach(name => {
+            defaultItems.push({ category: 'مناديل سحب (Facial)', name, price: 0 });
+        });
+        PRODUCTS_KITCHEN.forEach(name => {
+            defaultItems.push({ category: 'مناديل مطبخ (Kitchen)', name, price: 0 });
+        });
+        PRODUCTS_TOILET.forEach(name => {
+            defaultItems.push({ category: 'تواليت (Toilet)', name, price: 0 });
+        });
+        
+        return defaultItems;
+    };
+
     // Load Template when Market/Company changes
     useEffect(() => {
         const path = getTemplatePath();
@@ -45,7 +62,13 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
                 if (snapshot.exists()) {
                     setItems(snapshot.val());
                 } else {
-                    setItems([]); // Clear if no template exists
+                    // Logic: If no template exists for this user,
+                    // check if it is Soft Rose. If so, load default products.
+                    if (selectedCompany === 'Soft Rose') {
+                        setItems(getSoftRoseDefaults());
+                    } else {
+                        setItems([]); // Clear for other companies
+                    }
                 }
             });
             return () => unsubscribe();
@@ -175,6 +198,7 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
             {selectedMarket && selectedCompany && (
                 <div className="text-sm text-blue-500 bg-blue-100 p-2 rounded">
                     ملاحظة: الأصناف التي تقوم بتسجيلها هنا سيتم تثبيتها لحسابك ({user.name}) لهذا الماركت والشركة.
+                    {selectedCompany === 'Soft Rose' && <span className="block font-bold mt-1 text-indigo-700">تم تحميل منتجات Soft Rose الافتراضية.</span>}
                 </div>
             )}
 
