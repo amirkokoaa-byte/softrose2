@@ -120,6 +120,13 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
         if(name) await push(ref(db, 'settings/companies'), name);
     };
 
+    const handleAddMarket = async () => {
+        const name = prompt("ادخل اسم الماركت الجديد:");
+        if (name) {
+             await push(ref(db, 'settings/markets'), name);
+        }
+    };
+
     const deleteMarket = async () => {
         if(user.role !== 'admin') return;
         alert("خاصية الحذف تحتاج تحديد الماركت من الاعدادات");
@@ -140,6 +147,11 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
                             <option value="">اختر الماركت</option>
                             {markets.map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
+                        
+                        <button onClick={handleAddMarket} className="bg-blue-600 text-white p-2 rounded shrink-0" title="إضافة ماركت جديد">
+                            <Plus size={18}/>
+                        </button>
+
                         {user.role === 'admin' && (
                             <button onClick={deleteMarket} className="bg-red-500 text-white p-2 rounded shrink-0"><Trash size={18}/></button>
                         )}
