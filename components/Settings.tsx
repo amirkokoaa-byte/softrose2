@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
-import { ref, set, push, onValue, remove, update } from "firebase/database";
+import { ref, set, push, onValue, remove, update, get } from "firebase/database";
 import { User, AppSettings } from '../types';
-import { Save, Trash2, UserPlus, Shield, Edit2, Plus, X, Lock, Key } from 'lucide-react';
+import { Save, Trash2, UserPlus, Shield, Edit2, Plus, X, Lock, Key, Download, UploadCloud, Database } from 'lucide-react';
 
 interface Props {
     user: User;
@@ -26,6 +26,9 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
     // Password Change Modal State
     const [passModal, setPassModal] = useState<{key: string, name: string} | null>(null);
     const [newPass, setNewPass] = useState('');
+
+    // File Input Ref for Restore
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         setLocalSettings(settings);
@@ -123,6 +126,66 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
         } catch (e) {
             console.error("Error updating code:", e);
         }
+    };
+
+    // --- Backup & Restore Logic ---
+    const handleBackup = async () => {
+        try {
+            const rootRef = ref(db);
+            const snapshot = await get(rootRef);
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                const jsonString = JSON.stringify(data, null, 2);
+                const blob = new Blob([jsonString], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `SoftRose_Backup_${new Date().toISOString().slice(0,10)}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                alert("تم تحميل النسخة الاحتياطية بنجاح");
+            } else {
+                alert("لا توجد بيانات للنسخ");
+            }
+        } catch (error) {
+            console.error("Backup error:", error);
+            alert("فشل في إنشاء النسخة الاحتياطية");
+        }
+    };
+
+    const handleRestoreTrigger = () => {
+        if (fileInputRef.current) {
+            fileInputRef.current.click();
+        }
+    };
+
+    const handleRestoreFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const content = e.target?.result;
+                if (typeof content === 'string') {
+                    const data = JSON.parse(content);
+                    
+                    if(confirm("تحذير: استعادة البيانات ستقوم باستبدال البيانات الحالية بالبيانات الموجودة في الملف. هل أنت متأكد؟")) {
+                        await update(ref(db), data);
+                        alert("تم استعادة البيانات بنجاح!");
+                        window.location.reload(); // Reload to refresh state
+                    }
+                }
+            } catch (error) {
+                console.error("Restore error:", error);
+                alert("الملف غير صالح أو تالف");
+            }
+        };
+        reader.readAsText(file);
+        // Reset input
+        event.target.value = '';
     };
 
     // --- List Management (Markets/Companies) ---
@@ -244,6 +307,43 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 <button onClick={saveSettings} className="mt-4 bg-blue-600 text-white px-6 py-2 rounded flex items-center gap-2">
                     <Save size={18} /> حفظ الإعدادات
                 </button>
+            </div>
+
+            {/* Backup and Restore Section */}
+            <div className={sectionClass}>
+                 <h3 className="text-xl font-bold mb-4 border-b pb-2 flex items-center gap-2">
+                    <Database size={20} className="text-purple-500"/>
+                    إدارة البيانات والنسخ الاحتياطي
+                 </h3>
+                 <div className="flex flex-col md:flex-row gap-4">
+                    <button 
+                        onClick={handleBackup}
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition"
+                    >
+                        <Download size={20} />
+                        نسخة احتياطية (تنزيل)
+                    </button>
+                    
+                    <button 
+                        onClick={handleRestoreTrigger}
+                        className="flex-1 bg-orange-600 hover:bg-orange-700 text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition"
+                    >
+                        <UploadCloud size={20} />
+                        استعادة بيانات (Recovery)
+                    </button>
+                    <input 
+                        type="file" 
+                        accept=".json" 
+                        ref={fileInputRef} 
+                        className="hidden" 
+                        onChange={handleRestoreFile}
+                    />
+                 </div>
+                 <p className="mt-2 text-xs opacity-70">
+                    * النسخ الاحتياطي يقوم بتحميل ملف يحتوي على جميع البيانات.
+                    <br/>
+                    * استعادة البيانات ستقوم باستبدال البيانات الحالية بالبيانات الموجودة في الملف المختار.
+                 </p>
             </div>
 
             {/* Lists Management */}
