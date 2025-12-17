@@ -106,6 +106,7 @@ const App: React.FC = () => {
   }, [user]);
 
   const handleLogout = () => {
+    localStorage.removeItem('soft_rose_user');
     setUser(null);
   };
 
