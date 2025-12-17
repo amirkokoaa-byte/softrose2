@@ -57,3 +57,22 @@ export interface AppSettings {
         showCompetitorReports: boolean;
     };
 }
+
+export interface LeaveBalance {
+    userId: string;
+    employeeName: string;
+    annual: number; // سنوي
+    casual: number; // عارضة
+    sick: number;   // مرضي
+    exams: number;  // امتحانات
+}
+
+export interface LeaveRecord {
+    id?: string;
+    userId: string;
+    employeeName: string;
+    date: string; // تاريخ الاجازة
+    days: number;
+    type: 'annual' | 'casual' | 'sick' | 'exams';
+    timestamp: number;
+}

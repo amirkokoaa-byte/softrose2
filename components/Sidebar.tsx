@@ -2,7 +2,7 @@ import React from 'react';
 import { User, AppSettings } from '../types';
 import { 
     ShoppingCart, FileText, PackagePlus, ClipboardList, 
-    TrendingUp, BarChart2, Settings as SettingsIcon 
+    TrendingUp, BarChart2, Settings as SettingsIcon, CalendarOff 
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -24,6 +24,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, user, theme, co
         { id: 'inventoryLog', label: 'سجل المخزون', icon: ClipboardList, permission: settings.permissions?.showInventoryLog },
         { id: 'competitorPrices', label: 'أسعار المنافسين', icon: TrendingUp, alwaysShow: true },
         { id: 'competitorReports', label: 'تقارير المنافسين', icon: BarChart2, permission: settings.permissions?.showCompetitorReports },
+        { id: 'leaveBalance', label: 'رصيد الإجازات', icon: CalendarOff, alwaysShow: true },
         { id: 'settings', label: 'الإعدادات', icon: SettingsIcon, adminOnly: true },
     ];
 

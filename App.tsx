@@ -10,6 +10,7 @@ import InventoryRegistration from './components/InventoryRegistration';
 import InventoryLog from './components/InventoryLog';
 import CompetitorPrices from './components/CompetitorPrices';
 import CompetitorReports from './components/CompetitorReports';
+import LeaveBalanceComponent from './components/LeaveBalance';
 import Settings from './components/Settings';
 import { Home, LogOut, Phone, Wifi, WifiOff, Menu, X, Palette } from 'lucide-react';
 import { INITIAL_MARKETS } from './constants';
@@ -192,6 +193,7 @@ const App: React.FC = () => {
                 {currentView === 'inventoryLog' && <InventoryLog user={user} markets={markets} theme={theme} />}
                 {currentView === 'competitorPrices' && <CompetitorPrices user={user} markets={markets} theme={theme} />}
                 {currentView === 'competitorReports' && <CompetitorReports user={user} markets={markets} theme={theme} />}
+                {currentView === 'leaveBalance' && <LeaveBalanceComponent user={user} theme={theme} />}
                 {currentView === 'settings' && (
                     <Settings 
                         user={user} 
