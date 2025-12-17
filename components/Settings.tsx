@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { ref, set, push, onValue, remove, update, get } from "firebase/database";
 import { User, AppSettings } from '../types';
-import { Save, Trash2, UserPlus, Shield, Edit2, Plus, X, Lock, Key, Download, UploadCloud, Database } from 'lucide-react';
+import { Save, Trash2, UserPlus, Shield, Edit2, Plus, X, Lock, Key, Download, UploadCloud, Database, Send, MessageSquare } from 'lucide-react';
 
 interface Props {
     user: User;
@@ -26,6 +26,11 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
     // Password Change Modal State
     const [passModal, setPassModal] = useState<{key: string, name: string} | null>(null);
     const [newPass, setNewPass] = useState('');
+
+    // Messaging System State
+    const [msgTargetUser, setMsgTargetUser] = useState('');
+    const [msgBody, setMsgBody] = useState('');
+    const [showMsgModal, setShowMsgModal] = useState(false);
 
     // File Input Ref for Restore
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -119,7 +124,6 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
         }
     };
     
-    // New function to update user code inline
     const handleUpdateCode = async (key: string, newCode: string) => {
         try {
             await update(ref(db, `users/${key}`), { code: newCode });
@@ -127,6 +131,31 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
             console.error("Error updating code:", e);
         }
     };
+
+    // --- Messaging System ---
+    const handleSendMessage = async () => {
+        if (!msgTargetUser || !msgBody.trim()) return alert("يرجى اختيار المستخدم وكتابة الرسالة");
+        
+        try {
+            const notifData = {
+                message: msgBody,
+                sender: 'الإدارة',
+                timestamp: Date.now(),
+                isRead: false
+            };
+            
+            // We use the username as the key for notifications path: notifications/{username}
+            await push(ref(db, `notifications/${msgTargetUser}`), notifData);
+            
+            alert("تم إرسال الرسالة بنجاح");
+            setMsgBody('');
+            setShowMsgModal(false);
+        } catch (e) {
+            console.error(e);
+            alert("فشل الإرسال");
+        }
+    };
+
 
     // --- Backup & Restore Logic ---
     const handleBackup = async () => {
@@ -307,6 +336,39 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 <button onClick={saveSettings} className="mt-4 bg-blue-600 text-white px-6 py-2 rounded flex items-center gap-2">
                     <Save size={18} /> حفظ الإعدادات
                 </button>
+            </div>
+
+            {/* Messaging System */}
+            <div className={sectionClass}>
+                 <h3 className="text-xl font-bold mb-4 border-b pb-2 flex items-center gap-2">
+                    <MessageSquare size={20} className="text-blue-500"/>
+                    إرسال رسائل إدارية
+                 </h3>
+                 <div className="flex flex-col md:flex-row gap-4 items-end">
+                    <div className="flex-1 w-full">
+                        <label className="block mb-1 text-sm font-bold">اختر المستلم</label>
+                        <select 
+                            className={inputClass} 
+                            value={msgTargetUser} 
+                            onChange={e => setMsgTargetUser(e.target.value)}
+                        >
+                            <option value="">اختر حساب الموظف...</option>
+                            {users.map(u => (
+                                <option key={u.key} value={u.username}>{u.name} ({u.username})</option>
+                            ))}
+                        </select>
+                    </div>
+                    <button 
+                        onClick={() => {
+                            if(!msgTargetUser) return alert("اختر الحساب اولا");
+                            setShowMsgModal(true);
+                        }}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-6 rounded font-bold flex items-center gap-2 transition"
+                    >
+                        <Edit2 size={18} />
+                        اكتب الرسالة
+                    </button>
+                 </div>
             </div>
 
             {/* Backup and Restore Section */}
@@ -522,6 +584,40 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                         <div className="flex justify-end gap-3">
                             <button onClick={() => setPassModal(null)} className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded transition">إلغاء</button>
                             <button onClick={handleUpdatePassword} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold transition">حفظ التغيير</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Message Sending Modal */}
+            {showMsgModal && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+                    <div className={`p-6 rounded-lg w-full max-w-lg shadow-2xl ${theme === 'dark' ? 'bg-gray-800 text-white' : 'bg-white text-black'}`}>
+                        <div className="flex justify-between items-center mb-4 border-b pb-2">
+                            <h3 className="text-lg font-bold flex items-center gap-2">
+                                <Send size={20} className="text-blue-500" />
+                                إرسال رسالة إلى: <span className="text-blue-600">{users.find(u => u.username === msgTargetUser)?.name}</span>
+                            </h3>
+                            <button onClick={() => setShowMsgModal(false)}><X /></button>
+                        </div>
+                        
+                        <textarea 
+                            value={msgBody}
+                            onChange={e => setMsgBody(e.target.value)}
+                            maxLength={1000}
+                            className="w-full h-40 border p-3 rounded-lg resize-none text-black bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none"
+                            placeholder="اكتب رسالتك هنا (بحد أقصى 1000 حرف)..."
+                        ></textarea>
+                        
+                        <div className="text-xs text-right mt-1 opacity-60">
+                            {msgBody.length} / 1000
+                        </div>
+
+                        <div className="flex justify-end gap-3 mt-4">
+                            <button onClick={() => setShowMsgModal(false)} className="px-6 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">إلغاء</button>
+                            <button onClick={handleSendMessage} className="px-6 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 flex items-center gap-2">
+                                <Send size={16} /> إرسال
+                            </button>
                         </div>
                     </div>
                 </div>

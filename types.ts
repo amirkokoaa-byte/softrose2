@@ -76,3 +76,11 @@ export interface LeaveRecord {
     type: 'annual' | 'casual' | 'sick' | 'exams';
     timestamp: number;
 }
+
+export interface AppNotification {
+    id?: string;
+    message: string;
+    sender: string;
+    timestamp: number;
+    isRead: boolean;
+}
