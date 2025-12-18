@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { db } from './firebase';
 import { ref, onValue, set, update, onDisconnect, serverTimestamp } from "firebase/database";
@@ -82,24 +83,34 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!user) return;
     
-    // 1. Presence Logic
-    const userStatusRef = ref(db, `status/${user.username}`);
+    // Sanitize username for Firebase path (dots, hashes, etc. are not allowed as keys)
+    const safeKey = user.username.replace(/[.#$/[\]]/g, "_");
+    const userStatusRef = ref(db, `status/${safeKey}`);
     const connectedRef = ref(db, ".info/connected");
 
+    // Immediate online status update
+    const setOnline = () => {
+        set(userStatusRef, {
+            online: true,
+            lastSeen: serverTimestamp(),
+            name: user.name,
+            username: user.username
+        });
+        onDisconnect(userStatusRef).set({
+            online: false,
+            lastSeen: serverTimestamp(),
+            name: user.name,
+            username: user.username
+        });
+    };
+
+    // Trigger immediately
+    setOnline();
+
+    // Re-assert when connection state changes
     const unsubscribePresence = onValue(connectedRef, (snap) => {
         if (snap.val() === true) {
-            // When user connects/logs in
-            onDisconnect(userStatusRef).set({
-                online: false,
-                lastSeen: serverTimestamp(),
-                name: user.name
-            });
-            
-            set(userStatusRef, {
-                online: true,
-                lastSeen: serverTimestamp(),
-                name: user.name
-            });
+            setOnline();
         }
     });
 
@@ -129,12 +140,13 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     if (user) {
-        // Mark as offline before wiping state
-        const userStatusRef = ref(db, `status/${user.username}`);
+        const safeKey = user.username.replace(/[.#$/[\]]/g, "_");
+        const userStatusRef = ref(db, `status/${safeKey}`);
         await set(userStatusRef, {
             online: false,
             lastSeen: serverTimestamp(),
-            name: user.name
+            name: user.name,
+            username: user.username
         });
     }
     localStorage.removeItem('soft_rose_user');

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { ref, onValue } from "firebase/database";
@@ -34,12 +35,21 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, user, theme, co
                 if (snapshot.exists()) {
                     const data = snapshot.val();
                     const list: UserStatus[] = Object.keys(data).map(key => ({
-                        username: key,
+                        username: data[key].username || key,
                         name: data[key].name || key,
                         online: data[key].online || false
                     }));
-                    // Sort: Online users first
-                    setOnlineUsers(list.sort((a, b) => Number(b.online) - Number(a.online)));
+                    
+                    // Filter: Only show users who have been online recently or are currently online
+                    // Sort: Online users first, then alphabetically by name
+                    const sortedList = list.sort((a, b) => {
+                        if (a.online === b.online) {
+                            return a.name.localeCompare(b.name, 'ar');
+                        }
+                        return a.online ? -1 : 1;
+                    });
+                    
+                    setOnlineUsers(sortedList);
                 } else {
                     setOnlineUsers([]);
                 }
@@ -99,9 +109,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, user, theme, co
     }`;
 
     return (
-        <aside className={`w-64 md:w-72 p-6 flex flex-col ${containerClass} transition-all duration-300`}>
+        <aside className={`w-64 md:w-72 p-6 flex flex-col ${containerClass} transition-all duration-300 overflow-hidden`}>
             <div className={headerClass}>القائمة الرئيسية</div>
-            <nav className="flex-1 flex flex-col gap-3 overflow-y-auto">
+            <nav className="flex-1 flex flex-col gap-3 overflow-y-auto custom-scrollbar">
                 {menuItems.map(item => (
                     <button
                         key={item.id}
@@ -123,15 +133,18 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, user, theme, co
                             <Users size={14} />
                             <span>المستخدمين الآن (Online)</span>
                         </div>
-                        <div className="space-y-2 max-h-48 overflow-y-auto px-1">
+                        <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar px-1">
                             {onlineUsers.length === 0 ? (
                                 <div className="text-[10px] text-gray-500 italic px-2">لا توجد سجلات حالية</div>
                             ) : onlineUsers.map((u) => (
                                 <div key={u.username} className="flex items-center justify-between px-3 py-2 rounded-lg bg-black/5 hover:bg-black/10 transition">
-                                    <span className={`text-xs font-medium truncate ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                                    <span className={`text-xs font-medium truncate flex-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
                                         {u.name}
                                     </span>
-                                    <div className={`w-2.5 h-2.5 rounded-full ${u.online ? 'bg-blue-500 lamp-glow-blue' : 'bg-red-500 lamp-glow-red'}`} title={u.online ? "متصل" : "غير متصل"} />
+                                    <div 
+                                        className={`w-2.5 h-2.5 rounded-full transition-all duration-500 ${u.online ? 'bg-blue-500 lamp-glow-blue scale-110' : 'bg-red-500 opacity-40'}`} 
+                                        title={u.online ? "متصل" : "غير متصل"} 
+                                    />
                                 </div>
                             ))}
                         </div>
@@ -140,7 +153,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, user, theme, co
             </nav>
             
             <div className={`mt-auto text-xs px-2 pt-4 border-t ${theme === 'dark' ? 'border-gray-700 text-gray-500' : 'border-gray-200/20 text-gray-400'}`}>
-                v1.2.0
+                v1.2.1
             </div>
         </aside>
     );
