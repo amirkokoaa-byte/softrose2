@@ -65,6 +65,7 @@ export interface LeaveBalance {
     casual: number; // عارضة
     sick: number;   // مرضي
     exams: number;  // امتحانات
+    unpaid: number; // غياب بإذن
 }
 
 export interface LeaveRecord {
@@ -73,7 +74,7 @@ export interface LeaveRecord {
     employeeName: string;
     date: string; // تاريخ الاجازة
     days: number;
-    type: 'annual' | 'casual' | 'sick' | 'exams';
+    type: 'annual' | 'casual' | 'sick' | 'exams' | 'unpaid';
     timestamp: number;
 }
 
