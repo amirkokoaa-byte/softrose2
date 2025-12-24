@@ -229,7 +229,12 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                         {topItems.length > 0 ? topItems.map((item, idx) => (
                             <div key={idx} className={`px-4 py-2 rounded-xl border flex flex-col ${theme === 'dark' ? 'bg-gray-900 border-gray-700' : 'bg-blue-50 border-blue-100'}`}>
                                 <span className="text-[10px] opacity-60 truncate max-w-[120px]">{item.name}</span>
-                                <span className="text-xs font-bold text-blue-600">{item.total.toLocaleString()} ج.م</span>
+                                <div className="flex items-center justify-between gap-4 mt-0.5">
+                                    <span className="text-xs font-bold text-blue-600">{item.total.toLocaleString()} ج.م</span>
+                                    <span className="text-[10px] bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded-md font-bold">
+                                        {item.qty} قطعة
+                                    </span>
+                                </div>
                             </div>
                         )) : (
                             <div className="w-full text-center text-xs opacity-30 py-4 italic">لا توجد بيانات مبيعات حالياً</div>

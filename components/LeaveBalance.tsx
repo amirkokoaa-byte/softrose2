@@ -71,6 +71,16 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
         });
     }, [user]);
 
+    // Auto-select logged-in user when modal opens if found in list
+    useEffect(() => {
+        if (showAddLeaveModal) {
+            const currentUserInList = usersList.find(u => u.name === user.name);
+            if (currentUserInList) {
+                setSelectedUser(currentUserInList.key);
+            }
+        }
+    }, [showAddLeaveModal, usersList, user.name]);
+
     // Period Logic
     const getPeriodEnd = (start: Date) => {
         const end = new Date(start);
@@ -213,7 +223,7 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
                 ))}
             </div>
 
-            {/* Modal: History Details (Modern Cards View) */}
+            {/* Modal: History Details */}
             {showHistoryDetailsModal && historyUserView && (
                 <div className={modalClass}>
                     <div className={`${modalContentClass} max-w-3xl overflow-hidden flex flex-col max-h-[90vh]`}>
@@ -336,7 +346,10 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
                         <div className="space-y-4">
                             <select className={inputClass} value={selectedUser} onChange={e => setSelectedUser(e.target.value)}>
                                 <option value="">-- اختر الموظف --</option>
-                                {usersList.map(u => <option key={u.key} value={u.key}>{u.name}</option>)}
+                                {usersList
+                                    .filter(u => u.name === user.name)
+                                    .map(u => <option key={u.key} value={u.key}>{u.name}</option>)
+                                }
                             </select>
                             <input type="date" className={inputClass} value={leaveDate} onChange={e => setLeaveDate(e.target.value)} />
                             <div className="grid grid-cols-2 gap-4">
