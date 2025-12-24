@@ -1,3 +1,4 @@
+
 export const INITIAL_MARKETS = [
     "محلاوي الحي العاشر",
     "محلاوي التجمع الخامس",
@@ -54,4 +55,123 @@ export const PRODUCTS_DOLPHIN = [
     "Dolphin 9 Toilet Rolls",
     "Dolphin 18 Toilet Rolls",
     "Dolphin 24 Toilet Rolls"
+];
+
+// --- FINE PRODUCTS FROM IMAGE ---
+export const FINE_FACIAL = [
+    "550 singel fluffy",
+    "550 Singel Prestige",
+    "550 singel claccic",
+    "480 (4*1) Fluffy",
+    "550 (3*1) classic",
+    "550 (3*1) Fluffy",
+    "550 (3*1) Prestige",
+    "550 (6*1) Fluffy",
+    "550 (6*1) Prestige"
+];
+
+export const FINE_KITCHEN = [
+    "2 Rolls super towel",
+    "2 Rolls duetto towel",
+    "2 Rolls super towel pro",
+    "6 Rolls super towel",
+    "6 Rolls duetto towel",
+    "6 Rolls super towel pr",
+    "Mega Rool 480 sheets",
+    "Super mega 375 sheets",
+    "Super mega 700 sheets"
+];
+
+export const FINE_TOILET = [
+    "2 Toilet Deluxe",
+    "2 Toilet comfort XL",
+    "2 Toilet smart",
+    "2 Toilet duetto",
+    "6 Toilet duetto",
+    "6 Toilet Deluxe",
+    "6 Toilet comfort XL",
+    "6 Toilet smart",
+    "24 بكره comfort",
+    "L",
+    "XL",
+    "XXL"
+];
+
+// --- ZEINA PRODUCTS FROM IMAGE ---
+export const ZEINA_FACIAL = [
+    "550 Single classic",
+    "550 Single Trio",
+    "550 Single aroma",
+    "400 (4*1) classic",
+    "400 (4*1) trio",
+    "550 (3*1) classic",
+    "550 (3*1) Trio",
+    "550 (3*1) aroma",
+    "550 (6*1) classic",
+    "550 (6*1) Trio",
+    "777 (3*1)"
+];
+
+export const ZEINA_KITCHEN = [
+    "2 Rolls classic",
+    "2 Rolls Extra",
+    "2 Rolls sponge",
+    "2 Rolls Trio",
+    "6 Rolls classic",
+    "6 Rolls Extra",
+    "6 Rolls sponge",
+    "6 Rolls Trio",
+    "Roll L",
+    "Jumbo XI",
+    "Jumbo XXL"
+];
+
+export const ZEINA_TOILET = [
+    "2 Toilet compress",
+    "6 Toilet compress",
+    "6 Toilet Trio",
+    "6 Toilet لافندر",
+    "6 + 2 Toilet",
+    "10 + 2 Toilet"
+];
+
+// --- PAPIA & FAMILIA PRODUCTS FROM IMAGE ---
+export const PAPIA_FACIAL = [
+    "550 papia Single",
+    "550 papia (3*1) 2ply",
+    "550 papia (3*1) 3 ply",
+    "550 papia (6*1) 3 ply",
+    "550 familia Single",
+    "550 familia (3*1) 2ply",
+    "550 familia (3*1) 3 ply",
+    "550 familia (6*1) 3 ply",
+    "700 familia (3*1)",
+    "550 single GoodCare"
+];
+
+export const PAPIA_KITCHEN = [
+    "2 Rolls papia",
+    "4 Rolls papia",
+    "6 Rolls papia",
+    "2 Rolls Familia",
+    "4 Rolls Familia",
+    "6 Rolls Familia",
+    "6+2 Rolls Familia",
+    "Papia plus xl",
+    "Papia plus XXL",
+    "Familia XL",
+    "Familia XXL",
+    "2 kitchen GoodCare",
+    "6 Kitchen GoodCare"
+];
+
+export const PAPIA_TOILET = [
+    "2 Toilet papia",
+    "4 Toilet papia",
+    "6 Toilet papia",
+    "2 Toilet familia",
+    "4 Toilet familia",
+    "6 Toilet familia",
+    "24 Toilet",
+    "2 Toilet GoodCare"
 ];

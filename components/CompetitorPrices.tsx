@@ -1,8 +1,15 @@
+
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { ref, push, set, onValue, remove } from "firebase/database";
 import { User } from '../types';
-import { COMPANIES, PRODUCTS_FACIAL, PRODUCTS_KITCHEN, PRODUCTS_TOILET } from '../constants';
+import { 
+    COMPANIES, 
+    PRODUCTS_FACIAL, PRODUCTS_KITCHEN, PRODUCTS_TOILET, 
+    FINE_FACIAL, FINE_KITCHEN, FINE_TOILET,
+    ZEINA_FACIAL, ZEINA_KITCHEN, ZEINA_TOILET,
+    PAPIA_FACIAL, PAPIA_KITCHEN, PAPIA_TOILET
+} from '../constants';
 import { Save, Plus, Trash, Trash2, X } from 'lucide-react';
 
 interface Props {
@@ -53,6 +60,57 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
         return defaultItems;
     };
 
+    // Helper: Generate Default Fine Items (From Image)
+    const getFineDefaults = () => {
+        const defaultItems: {category: string, name: string, price: number}[] = [];
+        
+        FINE_FACIAL.forEach(name => {
+            defaultItems.push({ category: 'مناديل سحب (Facial)', name, price: 0 });
+        });
+        FINE_KITCHEN.forEach(name => {
+            defaultItems.push({ category: 'مناديل مطبخ (Kitchen)', name, price: 0 });
+        });
+        FINE_TOILET.forEach(name => {
+            defaultItems.push({ category: 'تواليت (Toilet)', name, price: 0 });
+        });
+        
+        return defaultItems;
+    };
+
+    // Helper: Generate Default Zeina Items (From Image)
+    const getZeinaDefaults = () => {
+        const defaultItems: {category: string, name: string, price: number}[] = [];
+        
+        ZEINA_FACIAL.forEach(name => {
+            defaultItems.push({ category: 'مناديل سحب (Facial)', name, price: 0 });
+        });
+        ZEINA_KITCHEN.forEach(name => {
+            defaultItems.push({ category: 'مناديل مطبخ (Kitchen)', name, price: 0 });
+        });
+        ZEINA_TOILET.forEach(name => {
+            defaultItems.push({ category: 'تواليت (Toilet)', name, price: 0 });
+        });
+        
+        return defaultItems;
+    };
+
+    // Helper: Generate Default Papia Familia Items (From Image)
+    const getPapiaFamiliaDefaults = () => {
+        const defaultItems: {category: string, name: string, price: number}[] = [];
+        
+        PAPIA_FACIAL.forEach(name => {
+            defaultItems.push({ category: 'مناديل سحب (Facial)', name, price: 0 });
+        });
+        PAPIA_KITCHEN.forEach(name => {
+            defaultItems.push({ category: 'مناديل مطبخ (Kitchen)', name, price: 0 });
+        });
+        PAPIA_TOILET.forEach(name => {
+            defaultItems.push({ category: 'تواليت (Toilet)', name, price: 0 });
+        });
+        
+        return defaultItems;
+    };
+
     // Load Template when Market/Company changes
     useEffect(() => {
         const path = getTemplatePath();
@@ -63,9 +121,15 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
                     setItems(snapshot.val());
                 } else {
                     // Logic: If no template exists for this user,
-                    // check if it is Soft Rose. If so, load default products.
+                    // check if it is Soft Rose, Fine, Zeina, or Papia Familia. If so, load default products.
                     if (selectedCompany === 'Soft Rose') {
                         setItems(getSoftRoseDefaults());
+                    } else if (selectedCompany === 'Fine') {
+                        setItems(getFineDefaults());
+                    } else if (selectedCompany === 'Zeina') {
+                        setItems(getZeinaDefaults());
+                    } else if (selectedCompany === 'Papia Familia') {
+                        setItems(getPapiaFamiliaDefaults());
                     } else {
                         setItems([]); // Clear for other companies
                     }
@@ -199,6 +263,9 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
                 <div className="text-sm text-blue-500 bg-blue-100 p-2 rounded">
                     ملاحظة: الأصناف التي تقوم بتسجيلها هنا سيتم تثبيتها لحسابك ({user.name}) لهذا الماركت والشركة.
                     {selectedCompany === 'Soft Rose' && <span className="block font-bold mt-1 text-indigo-700">تم تحميل منتجات Soft Rose الافتراضية.</span>}
+                    {selectedCompany === 'Fine' && <span className="block font-bold mt-1 text-indigo-700">تم تحميل منتجات Fine الافتراضية من القائمة.</span>}
+                    {selectedCompany === 'Zeina' && <span className="block font-bold mt-1 text-indigo-700">تم تحميل منتجات Zeina الافتراضية من القائمة.</span>}
+                    {selectedCompany === 'Papia Familia' && <span className="block font-bold mt-1 text-indigo-700">تم تحميل منتجات Papia & Familia الافتراضية.</span>}
                 </div>
             )}
 
