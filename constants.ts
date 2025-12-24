@@ -175,3 +175,29 @@ export const PAPIA_TOILET = [
     "24 Toilet",
     "2 Toilet GoodCare"
 ];
+
+// --- WHITE PRODUCTS FROM IMAGE ---
+export const WHITE_FACIAL = [
+    "550 single",
+    "550 (3*1) L",
+    "400 (3*1)",
+    "550 (3*1) Flexi",
+    "210 (5*1)"
+];
+
+export const WHITE_KITCHEN = [
+    "2 Rolls shef",
+    "4 Rolls shef",
+    "6 Rolls shef",
+    "2 Rolls shef pro",
+    "4 Rolls shef pro",
+    "6 Rolls shef pro",
+    "Mega Roll",
+    "Maxx Roll"
+];
+
+export const WHITE_TOILET = [
+    "2 Rolls compress",
+    "6 Rolls compress",
+    "12 Rolls compress"
+];

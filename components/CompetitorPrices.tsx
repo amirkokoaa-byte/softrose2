@@ -8,7 +8,8 @@ import {
     PRODUCTS_FACIAL, PRODUCTS_KITCHEN, PRODUCTS_TOILET, 
     FINE_FACIAL, FINE_KITCHEN, FINE_TOILET,
     ZEINA_FACIAL, ZEINA_KITCHEN, ZEINA_TOILET,
-    PAPIA_FACIAL, PAPIA_KITCHEN, PAPIA_TOILET
+    PAPIA_FACIAL, PAPIA_KITCHEN, PAPIA_TOILET,
+    WHITE_FACIAL, WHITE_KITCHEN, WHITE_TOILET
 } from '../constants';
 import { Save, Plus, Trash, Trash2, X } from 'lucide-react';
 
@@ -43,71 +44,12 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
         return `competitor_templates/${safeUser}/${safeMarket}/${safeCompany}`;
     };
 
-    // Helper: Generate Default Soft Rose Items
-    const getSoftRoseDefaults = () => {
+    // Helper: Generate Default Items from a list
+    const generateDefaultsFromList = (facial: string[], kitchen: string[], toilet: string[]) => {
         const defaultItems: {category: string, name: string, price: number}[] = [];
-        
-        PRODUCTS_FACIAL.forEach(name => {
-            defaultItems.push({ category: 'مناديل سحب (Facial)', name, price: 0 });
-        });
-        PRODUCTS_KITCHEN.forEach(name => {
-            defaultItems.push({ category: 'مناديل مطبخ (Kitchen)', name, price: 0 });
-        });
-        PRODUCTS_TOILET.forEach(name => {
-            defaultItems.push({ category: 'تواليت (Toilet)', name, price: 0 });
-        });
-        
-        return defaultItems;
-    };
-
-    // Helper: Generate Default Fine Items (From Image)
-    const getFineDefaults = () => {
-        const defaultItems: {category: string, name: string, price: number}[] = [];
-        
-        FINE_FACIAL.forEach(name => {
-            defaultItems.push({ category: 'مناديل سحب (Facial)', name, price: 0 });
-        });
-        FINE_KITCHEN.forEach(name => {
-            defaultItems.push({ category: 'مناديل مطبخ (Kitchen)', name, price: 0 });
-        });
-        FINE_TOILET.forEach(name => {
-            defaultItems.push({ category: 'تواليت (Toilet)', name, price: 0 });
-        });
-        
-        return defaultItems;
-    };
-
-    // Helper: Generate Default Zeina Items (From Image)
-    const getZeinaDefaults = () => {
-        const defaultItems: {category: string, name: string, price: number}[] = [];
-        
-        ZEINA_FACIAL.forEach(name => {
-            defaultItems.push({ category: 'مناديل سحب (Facial)', name, price: 0 });
-        });
-        ZEINA_KITCHEN.forEach(name => {
-            defaultItems.push({ category: 'مناديل مطبخ (Kitchen)', name, price: 0 });
-        });
-        ZEINA_TOILET.forEach(name => {
-            defaultItems.push({ category: 'تواليت (Toilet)', name, price: 0 });
-        });
-        
-        return defaultItems;
-    };
-
-    // Helper: Generate Default Papia Familia Items (From Image)
-    const getPapiaFamiliaDefaults = () => {
-        const defaultItems: {category: string, name: string, price: number}[] = [];
-        
-        PAPIA_FACIAL.forEach(name => {
-            defaultItems.push({ category: 'مناديل سحب (Facial)', name, price: 0 });
-        });
-        PAPIA_KITCHEN.forEach(name => {
-            defaultItems.push({ category: 'مناديل مطبخ (Kitchen)', name, price: 0 });
-        });
-        PAPIA_TOILET.forEach(name => {
-            defaultItems.push({ category: 'تواليت (Toilet)', name, price: 0 });
-        });
-        
+        facial.forEach(name => defaultItems.push({ category: 'مناديل سحب (Facial)', name, price: 0 }));
+        kitchen.forEach(name => defaultItems.push({ category: 'مناديل مطبخ (Kitchen)', name, price: 0 }));
+        toilet.forEach(name => defaultItems.push({ category: 'تواليت (Toilet)', name, price: 0 }));
         return defaultItems;
     };
 
@@ -120,16 +62,17 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
                 if (snapshot.exists()) {
                     setItems(snapshot.val());
                 } else {
-                    // Logic: If no template exists for this user,
-                    // check if it is Soft Rose, Fine, Zeina, or Papia Familia. If so, load default products.
+                    // Logic: If no template exists for this user, load company defaults
                     if (selectedCompany === 'Soft Rose') {
-                        setItems(getSoftRoseDefaults());
+                        setItems(generateDefaultsFromList(PRODUCTS_FACIAL, PRODUCTS_KITCHEN, PRODUCTS_TOILET));
                     } else if (selectedCompany === 'Fine') {
-                        setItems(getFineDefaults());
+                        setItems(generateDefaultsFromList(FINE_FACIAL, FINE_KITCHEN, FINE_TOILET));
                     } else if (selectedCompany === 'Zeina') {
-                        setItems(getZeinaDefaults());
+                        setItems(generateDefaultsFromList(ZEINA_FACIAL, ZEINA_KITCHEN, ZEINA_TOILET));
                     } else if (selectedCompany === 'Papia Familia') {
-                        setItems(getPapiaFamiliaDefaults());
+                        setItems(generateDefaultsFromList(PAPIA_FACIAL, PAPIA_KITCHEN, PAPIA_TOILET));
+                    } else if (selectedCompany === 'White') {
+                        setItems(generateDefaultsFromList(WHITE_FACIAL, WHITE_KITCHEN, WHITE_TOILET));
                     } else {
                         setItems([]); // Clear for other companies
                     }
@@ -226,9 +169,9 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
     return (
         <div className="space-y-6">
             <h2 className="text-2xl font-bold">تسجيل أسعار المنافسين</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white/5 p-4 rounded-lg">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white/5 p-4 rounded-lg text-black">
                 <div>
-                    <label className="block mb-1">الماركت</label>
+                    <label className="block mb-1 font-bold text-gray-700 dark:text-gray-300">الماركت</label>
                     <div className="flex gap-2">
                         <select className={inputClass} value={selectedMarket} onChange={e => setSelectedMarket(e.target.value)}>
                             <option value="">اختر الماركت</option>
@@ -245,7 +188,7 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
                     </div>
                 </div>
                 <div>
-                    <label className="block mb-1">الشركة</label>
+                    <label className="block mb-1 font-bold text-gray-700 dark:text-gray-300">الشركة</label>
                     <div className="flex gap-2">
                          <select className={inputClass} value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)}>
                             <option value="">اختر الشركة</option>
@@ -260,49 +203,69 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
 
             {/* Hint Message */}
             {selectedMarket && selectedCompany && (
-                <div className="text-sm text-blue-500 bg-blue-100 p-2 rounded">
-                    ملاحظة: الأصناف التي تقوم بتسجيلها هنا سيتم تثبيتها لحسابك ({user.name}) لهذا الماركت والشركة.
-                    {selectedCompany === 'Soft Rose' && <span className="block font-bold mt-1 text-indigo-700">تم تحميل منتجات Soft Rose الافتراضية.</span>}
-                    {selectedCompany === 'Fine' && <span className="block font-bold mt-1 text-indigo-700">تم تحميل منتجات Fine الافتراضية من القائمة.</span>}
-                    {selectedCompany === 'Zeina' && <span className="block font-bold mt-1 text-indigo-700">تم تحميل منتجات Zeina الافتراضية من القائمة.</span>}
-                    {selectedCompany === 'Papia Familia' && <span className="block font-bold mt-1 text-indigo-700">تم تحميل منتجات Papia & Familia الافتراضية.</span>}
+                <div className="text-sm text-blue-600 bg-blue-50 p-3 rounded-lg border border-blue-100">
+                    ملاحظة: الأصناف المثبتة خاصة بحسابك فقط لهذا الماركت والشركة.
+                    {selectedCompany === 'Soft Rose' && <span className="block font-bold mt-1">تم تحميل منتجات Soft Rose.</span>}
+                    {selectedCompany === 'Fine' && <span className="block font-bold mt-1">تم تحميل منتجات Fine.</span>}
+                    {selectedCompany === 'Zeina' && <span className="block font-bold mt-1">تم تحميل منتجات Zeina.</span>}
+                    {selectedCompany === 'Papia Familia' && <span className="block font-bold mt-1">تم تحميل منتجات Papia & Familia.</span>}
+                    {selectedCompany === 'White' && <span className="block font-bold mt-1">تم تحميل منتجات White.</span>}
                 </div>
             )}
 
             {categories.map(cat => (
-                <div key={cat} className="border border-gray-200/20 p-4 rounded bg-white/5">
-                    <h3 className="font-bold mb-3 text-yellow-600 border-b border-gray-200/10 pb-2">{cat}</h3>
-                    <div className="space-y-3">
+                <div key={cat} className="border border-gray-200/20 p-4 rounded-xl bg-white/5">
+                    <h3 className="font-bold mb-4 text-yellow-600 border-b border-gray-200/10 pb-2 text-lg">{cat}</h3>
+                    
+                    {/* Header Row for alignment */}
+                    <div className="flex gap-2 mb-2 px-1 text-[10px] md:text-xs font-bold opacity-60 uppercase">
+                        <div className="flex-1">اسم الصنف</div>
+                        <div className="w-24 md:w-32 text-center">السعر</div>
+                        <div className="w-8"></div>
+                    </div>
+
+                    <div className="space-y-2">
                         {items.map((item, idx) => item.category === cat && (
-                            <div key={idx} className="flex flex-col md:flex-row gap-2 items-center">
-                                <input 
-                                    placeholder="اسم الصنف" 
-                                    className={`${inputClass} md:w-2/3`} 
-                                    value={item.name} 
-                                    onChange={e => updateItem(idx, 'name', e.target.value)}
-                                />
-                                <input 
-                                    type="number" 
-                                    placeholder="السعر" 
-                                    className={`${inputClass} md:w-1/3`} 
-                                    value={item.price || ''}
-                                    onChange={e => updateItem(idx, 'price', e.target.value)}
-                                />
+                            <div key={idx} className="flex flex-row gap-2 items-center">
+                                <div className="flex-1 min-w-0">
+                                    <input 
+                                        placeholder="اسم الصنف" 
+                                        className={`${inputClass} text-xs md:text-sm h-10`} 
+                                        value={item.name} 
+                                        onChange={e => updateItem(idx, 'name', e.target.value)}
+                                    />
+                                </div>
+                                <div className="w-24 md:w-32 flex-shrink-0">
+                                    <input 
+                                        type="number" 
+                                        placeholder="السعر" 
+                                        className={`${inputClass} text-center text-xs md:text-sm h-10`} 
+                                        value={item.price || ''}
+                                        onChange={e => updateItem(idx, 'price', e.target.value)}
+                                    />
+                                </div>
                                 <button 
                                     onClick={() => deleteItem(idx)}
-                                    className="p-2 text-red-500 hover:bg-red-100 rounded transition"
+                                    className="p-1.5 text-red-500 hover:bg-red-50 rounded transition shrink-0"
                                     title="حذف الصنف"
                                 >
-                                    <Trash2 size={18} />
+                                    <Trash2 size={16} />
                                 </button>
                             </div>
                         ))}
                     </div>
-                    <button onClick={() => addItem(cat)} className="mt-3 text-sm bg-gray-200 hover:bg-white text-black px-4 py-2 rounded shadow transition w-full md:w-auto">+ اضف منتج</button>
+                    <button 
+                        onClick={() => addItem(cat)} 
+                        className="mt-4 text-xs bg-gray-100 hover:bg-white text-black px-4 py-2 rounded-lg shadow-sm border border-gray-200 transition w-full md:w-auto flex items-center justify-center gap-1"
+                    >
+                        <Plus size={14}/> اضف منتج جديد
+                    </button>
                 </div>
             ))}
 
-            <button onClick={handleSaveReport} className="bg-green-600 hover:bg-green-700 w-full py-3 text-white rounded-lg font-bold shadow-lg text-lg transition">حفظ التقرير (ترحيل)</button>
+            <button onClick={handleSaveReport} className="bg-green-600 hover:bg-green-700 w-full py-4 text-white rounded-2xl font-bold shadow-xl text-lg transition transform active:scale-[0.98] flex items-center justify-center gap-2">
+                <Save size={24} /> حفظ التقرير وترحيله
+            </button>
         </div>
     );
 };
