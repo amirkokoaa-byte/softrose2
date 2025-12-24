@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { ref, set, push, onValue, remove, update, get } from "firebase/database";
 import { User, AppSettings } from '../types';
-import { Save, Trash2, UserPlus, Shield, Edit2, Plus, X, Lock, Key, Download, UploadCloud, Database, Send, MessageSquare } from 'lucide-react';
+import { Save, Trash2, UserPlus, Shield, Edit2, Plus, X, Lock, Key, Download, UploadCloud, Database, Send, MessageSquare, UserCheck } from 'lucide-react';
 
 interface Props {
     user: User;
@@ -17,6 +18,9 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
     const [users, setUsers] = useState<any[]>([]);
     const [newUser, setNewUser] = useState({ name: '', username: '', password: '', role: 'user', code: '', phone: '', canViewAllSales: false });
     
+    // Permission selection state
+    const [selectedPermUser, setSelectedPermUser] = useState<string>('');
+
     // Lists Management
     const [marketList, setMarketList] = useState<{key: string, val: string}[]>([]);
     const [companyList, setCompanyList] = useState<{key: string, val: string}[]>([]);
@@ -95,6 +99,17 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 [key]: value
             }
         }));
+    };
+
+    // --- User Specific Permission Update ---
+    const handleToggleUserViewAll = async (userKey: string, currentVal: boolean) => {
+        try {
+            await update(ref(db, `users/${userKey}`), { canViewAllSales: !currentVal });
+            alert("تم تحديث صلاحية المستخدم");
+        } catch (e) {
+            console.error(e);
+            alert("حدث خطأ في التحديث");
+        }
     };
 
     // --- User Management ---
@@ -201,7 +216,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 if (typeof content === 'string') {
                     const data = JSON.parse(content);
                     
-                    if(confirm("تحذير: استعادة البيانات ستقوم باستبدال البيانات الحالية بالبيانات الموجودة في الملف. هل أنت متأكد؟")) {
+                    if(confirm("تحذير: استعادة البيانات ستقوم باستبدال البيانات الحالية بالبيانات الموجودة في الملف المختار. هل أنت متأكد؟")) {
                         await update(ref(db), data);
                         alert("تم استعادة البيانات بنجاح!");
                         window.location.reload(); // Reload to refresh state
@@ -244,6 +259,8 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
 
     const inputClass = "w-full p-2 rounded border border-gray-300 text-black";
     const sectionClass = `p-6 rounded-lg mb-6 ${theme === 'dark' ? 'bg-gray-800 border border-gray-700' : 'bg-white shadow'}`;
+
+    const activeUserPerm = users.find(u => u.username === selectedPermUser);
 
     return (
         <div className="max-w-4xl mx-auto space-y-6 pb-10">
@@ -289,8 +306,8 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                     </div>
                 </div>
 
-                {/* Permissions Section */}
-                <h4 className="font-bold mt-6 mb-3 flex items-center gap-2 border-t pt-4"><Lock size={18}/> صلاحيات العرض للمستخدمين</h4>
+                {/* Global Module Permissions Section */}
+                <h4 className="font-bold mt-6 mb-3 flex items-center gap-2 border-t pt-4"><Shield size={18} className="text-indigo-500"/> صلاحيات العرض العامة (لجميع الموظفين)</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-100 dark:bg-gray-900 p-4 rounded text-sm">
                     <label className="flex items-center gap-2 cursor-pointer">
                         <input 
@@ -299,7 +316,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                             checked={localSettings.permissions?.showSalesLog || false}
                             onChange={e => updatePermission('showSalesLog', e.target.checked)}
                         />
-                        <span>عرض "سجل المبيعات" للموظفين</span>
+                        <span className="text-black dark:text-gray-300">عرض "سجل المبيعات" للموظفين</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -309,7 +326,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                             checked={localSettings.permissions?.showInventoryReg || false}
                             onChange={e => updatePermission('showInventoryReg', e.target.checked)}
                         />
-                        <span>عرض "تسجيل المخزون" للموظفين</span>
+                        <span className="text-black dark:text-gray-300">عرض "تسجيل المخزون" للموظفين</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -319,7 +336,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                             checked={localSettings.permissions?.showInventoryLog || false}
                             onChange={e => updatePermission('showInventoryLog', e.target.checked)}
                         />
-                        <span>عرض "سجل المخزون" للموظفين</span>
+                        <span className="text-black dark:text-gray-300">عرض "سجل المخزون" للموظفين</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -329,12 +346,47 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                             checked={localSettings.permissions?.showCompetitorReports || false}
                             onChange={e => updatePermission('showCompetitorReports', e.target.checked)}
                         />
-                        <span>عرض "تقارير المنافسين" للموظفين</span>
+                        <span className="text-black dark:text-gray-300">عرض "تقارير المنافسين" للموظفين</span>
                     </label>
                 </div>
 
-                <button onClick={saveSettings} className="mt-4 bg-blue-600 text-white px-6 py-2 rounded flex items-center gap-2">
-                    <Save size={18} /> حفظ الإعدادات
+                {/* Individual User Permissions Section */}
+                <h4 className="font-bold mt-6 mb-3 flex items-center gap-2 border-t pt-4"><UserCheck size={18} className="text-green-500"/> صلاحيات الحسابات الفردية</h4>
+                <div className="space-y-4 bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl">
+                    <div>
+                        <label className="block mb-1 text-xs font-bold text-blue-600">اختر حساب الموظف للتحكم بصلاحياته</label>
+                        <select 
+                            className={inputClass} 
+                            value={selectedPermUser} 
+                            onChange={e => setSelectedPermUser(e.target.value)}
+                        >
+                            <option value="">-- اختر مستخدم --</option>
+                            {users.map(u => <option key={u.key} value={u.username}>{u.name} (@{u.username})</option>)}
+                        </select>
+                    </div>
+
+                    {activeUserPerm ? (
+                        <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                             <div className="p-3 bg-white dark:bg-gray-800 rounded-lg border border-blue-200 dark:border-blue-800 flex items-center justify-between">
+                                <div>
+                                    <div className="font-bold text-sm">صلاحية "رؤية جميع مبيعات الموظفين"</div>
+                                    <div className="text-[10px] opacity-60">في حال التفعيل، سيتمكن هذا الحساب من رؤية سجلات مبيعات جميع الزملاء، وإلا سيرى مبيعاته فقط.</div>
+                                </div>
+                                <div 
+                                    onClick={() => handleToggleUserViewAll(activeUserPerm.key, activeUserPerm.canViewAllSales || false)}
+                                    className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors duration-300 relative ${activeUserPerm.canViewAllSales ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-700'}`}
+                                >
+                                    <div className={`w-4 h-4 bg-white rounded-full transition-transform duration-300 shadow ${activeUserPerm.canViewAllSales ? 'translate-x-6' : 'translate-x-0'}`} />
+                                </div>
+                             </div>
+                        </div>
+                    ) : (
+                        <div className="text-center py-2 text-xs opacity-50 italic">الرجاء اختيار مستخدم لتعديل صلاحياته الفردية</div>
+                    )}
+                </div>
+
+                <button onClick={saveSettings} className="mt-6 bg-blue-600 text-white px-6 py-2 rounded-xl flex items-center gap-2 font-bold shadow-lg hover:bg-blue-700 transition">
+                    <Save size={18} /> حفظ جميع التغييرات العامة
                 </button>
             </div>
 
@@ -425,7 +477,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                     <ul className="max-h-60 overflow-y-auto space-y-2">
                         {marketList.map(m => (
                             <li key={m.key} className="flex justify-between items-center bg-black/10 p-2 rounded">
-                                <span>{m.val}</span>
+                                <span className="text-black dark:text-gray-300">{m.val}</span>
                                 <div className="flex gap-2">
                                     <button onClick={() => startEditItem(m, 'market')} className="text-blue-500"><Edit2 size={16}/></button>
                                     <button onClick={() => handleDeleteListItem(m.key, 'market')} className="text-red-500"><Trash2 size={16}/></button>
@@ -455,7 +507,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                     <ul className="max-h-60 overflow-y-auto space-y-2">
                         {companyList.map(c => (
                             <li key={c.key} className="flex justify-between items-center bg-black/10 p-2 rounded">
-                                <span>{c.val}</span>
+                                <span className="text-black dark:text-gray-300">{c.val}</span>
                                 <div className="flex gap-2">
                                     <button onClick={() => startEditItem(c, 'company')} className="text-blue-500"><Edit2 size={16}/></button>
                                     <button onClick={() => handleDeleteListItem(c.key, 'company')} className="text-red-500"><Trash2 size={16}/></button>
@@ -505,7 +557,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                         </select>
                         <div className="flex items-center gap-2 md:col-span-2">
                             <input type="checkbox" checked={newUser.canViewAllSales} onChange={e => setNewUser({...newUser, canViewAllSales: e.target.checked})} />
-                            <label>السماح برؤية مبيعات الجميع</label>
+                            <label>السماح برؤية مبيعات الجميع افتراضياً</label>
                         </div>
                     </div>
                     <button onClick={handleAddUser} className="mt-2 bg-green-600 text-white px-4 py-1 rounded">إضافة</button>
@@ -515,7 +567,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-right">
                         <thead>
-                            <tr className="bg-gray-500/20">
+                            <tr className="bg-gray-500/20 text-black dark:text-gray-300">
                                 <th className="p-2">الاسم</th>
                                 <th className="p-2">المستخدم</th>
                                 <th className="p-2">الدور</th>
@@ -525,7 +577,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                         </thead>
                         <tbody>
                             {users.map(u => (
-                                <tr key={u.key} className="border-b border-gray-500/10">
+                                <tr key={u.key} className="border-b border-gray-500/10 text-black dark:text-gray-300">
                                     <td className="p-2">{u.name}</td>
                                     <td className="p-2">{u.username}</td>
                                     <td className="p-2">
@@ -569,7 +621,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
             {/* Change Password Modal */}
             {passModal && (
                 <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-                    <div className={`p-6 rounded-lg w-full max-w-sm shadow-2xl ${theme === 'dark' ? 'bg-gray-800 text-white' : 'bg-white text-black'}`}>
+                    <div className={`p-6 rounded-lg w-full max-sm shadow-2xl ${theme === 'dark' ? 'bg-gray-800 text-white' : 'bg-white text-black'}`}>
                         <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
                             <Key size={20} className="text-yellow-500" />
                             تغيير كلمة مرور: <span className="text-blue-500">{passModal.name}</span>

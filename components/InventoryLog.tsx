@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { ref, onValue, remove, update } from "firebase/database";
@@ -26,8 +27,8 @@ const InventoryLog: React.FC<Props> = ({ user, markets, theme }) => {
                     ...data[key]
                 })) as InventoryRecord[];
 
-                // DATA PRIVACY: Filter by user unless admin
-                if (user.role !== 'admin') {
+                // DATA PRIVACY: Filter by user unless admin OR has permission
+                if (user.role !== 'admin' && !user.canViewAllSales) {
                     arr = arr.filter(l => l.employeeName === user.name);
                 }
 
@@ -114,8 +115,8 @@ const InventoryLog: React.FC<Props> = ({ user, markets, theme }) => {
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
                             {(log.items || []).map((item, i) => (
                                 <div key={i} className="flex justify-between bg-black/5 p-1 rounded px-2">
-                                    <span>{item.name}</span>
-                                    <span className="font-bold">{item.qty}</span>
+                                    <span className="text-black dark:text-gray-300">{item.name}</span>
+                                    <span className="font-bold text-black dark:text-gray-300">{item.qty}</span>
                                 </div>
                             ))}
                         </div>

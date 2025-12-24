@@ -46,7 +46,7 @@ const App: React.FC = () => {
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const [selectedNotif, setSelectedNotif] = useState<AppNotification | null>(null);
 
-  // Realtime Listeners
+  // Realtime Listeners for settings
   useEffect(() => {
     const settingsRef = ref(db, 'settings/app');
     const marketsRef = ref(db, 'settings/markets');
@@ -79,16 +79,33 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Presence & Notifications Logic
+  // Presence & User Sync Logic
   useEffect(() => {
     if (!user) return;
     
-    // Sanitize username for Firebase path (dots, hashes, etc. are not allowed as keys)
+    // 1. Sync User Profile (Permissions etc)
+    // Find the user key based on username
+    const usersRef = ref(db, 'users');
+    const unsubscribeUserSync = onValue(usersRef, (snapshot) => {
+        if (snapshot.exists()) {
+            const usersData = snapshot.val();
+            const userKey = Object.keys(usersData).find(key => usersData[key].username === user.username);
+            if (userKey) {
+                const updatedUser = usersData[userKey];
+                // Only update state if something changed to avoid loops
+                if (JSON.stringify(updatedUser) !== JSON.stringify(user)) {
+                    setUser(updatedUser);
+                    localStorage.setItem('soft_rose_user', JSON.stringify(updatedUser));
+                }
+            }
+        }
+    });
+
+    // 2. Presence
     const safeKey = user.username.replace(/[.#$/[\]]/g, "_");
     const userStatusRef = ref(db, `status/${safeKey}`);
     const connectedRef = ref(db, ".info/connected");
 
-    // Immediate online status update
     const setOnline = () => {
         set(userStatusRef, {
             online: true,
@@ -104,17 +121,15 @@ const App: React.FC = () => {
         });
     };
 
-    // Trigger immediately
     setOnline();
 
-    // Re-assert when connection state changes
     const unsubscribePresence = onValue(connectedRef, (snap) => {
         if (snap.val() === true) {
             setOnline();
         }
     });
 
-    // 2. Notifications Logic
+    // 3. Notifications
     const notifRef = ref(db, `notifications/${user.username}`);
     const unsubscribeNotif = onValue(notifRef, (snapshot) => {
         if(snapshot.exists()) {
@@ -133,10 +148,11 @@ const App: React.FC = () => {
     });
 
     return () => {
+        unsubscribeUserSync();
         unsubscribePresence();
         unsubscribeNotif();
     };
-  }, [user]);
+  }, [user?.username]); // Only re-run if username changes
 
   const handleLogout = async () => {
     if (user) {
