@@ -176,26 +176,28 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                 <h2 className="text-2xl font-bold flex items-center gap-2">
                     <FileSpreadsheet className="text-blue-500" /> سجل المبيعات
                 </h2>
-                <div className="flex gap-2 w-full md:w-auto">
-                    <button 
-                        onClick={() => setShowStatsModal(true)}
-                        className="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 font-bold shadow-lg transition transform active:scale-95"
-                    >
-                        <Calculator size={18} /> حساب مبيعات فترة
-                    </button>
-                    <button 
-                        onClick={() => {
-                            const data = filteredSales.flatMap(sale => (sale.items || []).map(item => ({
-                                "التاريخ": sale.date, "الماركت": sale.market, "الموظف": sale.employeeName,
-                                "الصنف": item.name, "السعر": item.price, "العدد": item.qty, "الإجمالي": (item.price * item.qty)
-                            })));
-                            exportToCSV(data, 'Full_Sales_Log');
-                        }}
-                        className="flex-1 md:flex-none bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 font-bold shadow-lg transition transform active:scale-95"
-                    >
-                        <Download size={18} /> تصدير السجل الحالي
-                    </button>
-                </div>
+                {user.role === 'admin' && (
+                    <div className="flex gap-2 w-full md:w-auto">
+                        <button 
+                            onClick={() => setShowStatsModal(true)}
+                            className="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 font-bold shadow-lg transition transform active:scale-95"
+                        >
+                            <Calculator size={18} /> حساب مبيعات فترة
+                        </button>
+                        <button 
+                            onClick={() => {
+                                const data = filteredSales.flatMap(sale => (sale.items || []).map(item => ({
+                                    "التاريخ": sale.date, "الماركت": sale.market, "الموظف": sale.employeeName,
+                                    "الصنف": item.name, "السعر": item.price, "العدد": item.qty, "الإجمالي": (item.price * item.qty)
+                                })));
+                                exportToCSV(data, 'Full_Sales_Log');
+                            }}
+                            className="flex-1 md:flex-none bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 font-bold shadow-lg transition transform active:scale-95"
+                        >
+                            <Download size={18} /> تصدير السجل الحالي
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Monthly Leaderboard */}
@@ -317,7 +319,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
             </div>
 
             {/* Modal: Period Statistics (Aggregated) */}
-            {showStatsModal && (
+            {showStatsModal && user.role === 'admin' && (
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-md">
                     <div className={`w-full max-w-lg rounded-3xl shadow-2xl p-8 border ${theme === 'dark' ? 'bg-gray-900 text-white border-gray-800' : 'bg-white text-black border-gray-100'}`}>
                         <div className="flex justify-between items-center mb-6">
