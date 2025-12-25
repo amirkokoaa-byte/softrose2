@@ -137,11 +137,19 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
             items: validItems
         };
         
-        await push(ref(db, 'competitor_prices'), data);
-        alert("تم حفظ تقرير أسعار المنافسين");
-        
-        // Optional: Reset prices to 0 after report submission but keep names?
-        // For now, based on request "Fix items", we leave them as is.
+        try {
+            await push(ref(db, 'competitor_prices'), data);
+            alert("تم حفظ تقرير أسعار المنافسين");
+            
+            // Clear prices after saving
+            const clearedItems = items.map(item => ({ ...item, price: 0 }));
+            setItems(clearedItems);
+            updateTemplate(clearedItems);
+            
+        } catch (error) {
+            console.error("Error saving competitor report:", error);
+            alert("حدث خطأ أثناء حفظ التقرير");
+        }
     };
 
     const addCompany = async () => {
