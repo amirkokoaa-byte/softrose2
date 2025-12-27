@@ -33,7 +33,8 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
                     category: cat.key,
                     name: itemName,
                     price: 0,
-                    qty: 0
+                    qty: 0,
+                    isCustom: false
                 });
             });
         });
@@ -44,11 +45,27 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
         setSalesItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
     };
 
+    const handleAddCustomItem = (category: string) => {
+        const newItem: ProductItem = {
+            id: `custom_${Date.now()}_${Math.random()}`,
+            category,
+            name: '',
+            price: 0,
+            qty: 0,
+            isCustom: true
+        };
+        setSalesItems(prev => [...prev, newItem]);
+    };
+
+    const removeCustomItem = (id: string) => {
+        setSalesItems(prev => prev.filter(i => i.id !== id));
+    };
+
     const calculateTotal = () => salesItems.reduce((sum, item) => sum + ((Number(item.price) || 0) * (Number(item.qty) || 0)), 0);
 
     const handleSave = async () => {
         if (!selectedMarket) return alert("الرجاء اختيار الماركت");
-        const soldItems = salesItems.filter(item => (Number(item.price) > 0 && Number(item.qty) > 0));
+        const soldItems = salesItems.filter(item => (item.name && Number(item.price) > 0 && Number(item.qty) > 0));
         if (soldItems.length === 0) return alert("لا يوجد مبيعات مكتملة للحفظ");
 
         const saleData = {
@@ -62,7 +79,12 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
 
         await push(ref(db, 'sales'), saleData);
         setNotification('تم حفظ المبيعات بنجاح!');
-        setSalesItems(prev => prev.map(item => ({...item, price: 0, qty: 0})));
+        // Reset only values, but keep the custom items for a while? Or clear all?
+        // Let's clear custom items and reset fixed ones
+        setSalesItems(prev => {
+            const fixedOnly = prev.filter(i => !i.isCustom).map(i => ({...i, price: 0, qty: 0}));
+            return fixedOnly;
+        });
         setTimeout(() => setNotification(''), 3000);
     };
 
@@ -96,19 +118,46 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
             </div>
 
             {allCategories.map(cat => (
-                <div key={cat.key}>
-                    <div className="bg-gray-400 text-black font-bold p-2 rounded mt-4 mb-2 text-center shadow-sm">{cat.name}</div>
+                <div key={cat.key} className="bg-white/5 p-4 rounded-xl border border-gray-500/10">
+                    <div className="flex justify-between items-center mb-4 border-b border-gray-500/20 pb-2">
+                        <h3 className="text-xl font-bold text-blue-500">{cat.name}</h3>
+                        <button 
+                            onClick={() => handleAddCustomItem(cat.key)} 
+                            className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1.5 rounded flex items-center gap-1 shadow"
+                        >
+                            <Plus size={14}/> اضف صنف
+                        </button>
+                    </div>
                     <div className="space-y-2">
                         {salesItems.filter(item => item.category === cat.key).map((item) => (
                             <div key={item.id} className="grid grid-cols-12 gap-1 items-center bg-black/5 p-1 rounded">
-                                <div className="col-span-4 text-xs truncate pr-2">{item.name}</div>
+                                <div className="col-span-4 text-xs pr-2">
+                                    {item.isCustom ? (
+                                        <input 
+                                            type="text" 
+                                            value={item.name} 
+                                            onChange={(e) => updateItem(item.id, 'name', e.target.value)} 
+                                            className={`${inputClass} h-8 text-[10px]`} 
+                                            placeholder="اسم الصنف..." 
+                                        />
+                                    ) : (
+                                        <div className="truncate">{item.name}</div>
+                                    )}
+                                </div>
                                 <div className="col-span-3">
                                     <input type="number" value={item.price || ''} onChange={(e) => updateItem(item.id, 'price', parseFloat(e.target.value))} className={`${inputClass} text-center h-8 text-xs`} placeholder="السعر" />
                                 </div>
                                 <div className="col-span-2">
                                     <input type="number" value={item.qty || ''} onChange={(e) => updateItem(item.id, 'qty', parseFloat(e.target.value))} className={`${inputClass} text-center h-8 text-xs`} placeholder="0" />
                                 </div>
-                                <div className="col-span-3 text-center font-bold text-xs">{(Number(item.price) * Number(item.qty)) || '-'}</div>
+                                <div className="col-span-2 text-center font-bold text-xs">{(Number(item.price) * Number(item.qty)) || '-'}</div>
+                                <div className="col-span-1 flex justify-center">
+                                    {item.isCustom && (
+                                        <button onClick={() => removeCustomItem(item.id)} className="text-red-500 hover:bg-red-50 p-1 rounded transition">
+                                            <Trash2 size={14} />
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         ))}
                     </div>

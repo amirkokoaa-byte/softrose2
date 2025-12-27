@@ -5,6 +5,7 @@ export interface ProductItem {
     price: number;
     qty: number;
     category: string;
+    isCustom?: boolean;
 }
 
 export interface SaleRecord {
@@ -31,17 +32,27 @@ export interface CompetitorPrice {
     market: string;
     company: string;
     date: string;
-    employeeName?: string; // Added field
+    employeeName?: string;
     items: { category: string; name: string; price: number }[];
 }
 
+export interface UserPermissions {
+    showSalesLog: boolean;
+    showInventoryLog: boolean;
+    showInventoryReg: boolean;
+    showCompetitorReports: boolean;
+}
+
 export interface User {
+    key?: string;
     username: string;
     role: 'admin' | 'user';
     name: string;
     code?: string;
     phone?: string;
     canViewAllSales?: boolean;
+    password?: string;
+    permissions?: UserPermissions;
 }
 
 export interface AppSettings {
@@ -49,30 +60,24 @@ export interface AppSettings {
     tickerText: string;
     tickerEnabled: boolean;
     whatsappNumber: string;
-    // Permissions (defaults to false for sensitive data)
-    permissions: {
-        showSalesLog: boolean;
-        showInventoryLog: boolean;
-        showInventoryReg: boolean;
-        showCompetitorReports: boolean;
-    };
+    permissions: UserPermissions; // Default permissions for system
 }
 
 export interface LeaveBalance {
     userId: string;
     employeeName: string;
-    annual: number; // سنوي
-    casual: number; // عارضة
-    sick: number;   // مرضي
-    exams: number;  // امتحانات
-    unpaid: number; // غياب بإذن
+    annual: number;
+    casual: number;
+    sick: number;
+    exams: number;
+    unpaid: number;
 }
 
 export interface LeaveRecord {
     id?: string;
     userId: string;
     employeeName: string;
-    date: string; // تاريخ الاجازة
+    date: string;
     days: number;
     type: 'annual' | 'casual' | 'sick' | 'exams' | 'unpaid';
     timestamp: number;

@@ -2,11 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { ref, set, push, onValue, remove, update } from "firebase/database";
-import { User, AppSettings } from '../types';
+import { User, AppSettings, UserPermissions } from '../types';
 import { 
   Save, Trash2, UserPlus, Shield, Edit2, Plus, X, 
   Settings as SettingsIcon, Users, MapPin, Building2, 
-  ToggleLeft, ToggleRight, Key, MessageSquare 
+  ToggleLeft, ToggleRight, Key, Eye, EyeOff
 } from 'lucide-react';
 
 interface Props {
@@ -19,11 +19,27 @@ interface Props {
 
 const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme }) => {
     const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
-    const [users, setUsers] = useState<any[]>([]);
-    const [newUser, setNewUser] = useState({ name: '', username: '', password: '', role: 'user' as const, canViewAllSales: false });
+    const [users, setUsers] = useState<User[]>([]);
+    const [newUser, setNewUser] = useState<User>({ 
+        name: '', 
+        username: '', 
+        password: '', 
+        role: 'user', 
+        canViewAllSales: false,
+        permissions: {
+            showSalesLog: true,
+            showInventoryLog: false,
+            showInventoryReg: false,
+            showCompetitorReports: false
+        }
+    });
+    
     const [marketList, setMarketList] = useState<{key: string, name: string, createdBy: string}[]>([]);
     const [companyList, setCompanyList] = useState<{key: string, name: string, createdBy: string}[]>([]);
+    
+    // Modals
     const [passModal, setPassModal] = useState<{key: string, name: string} | null>(null);
+    const [permModal, setPermModal] = useState<User | null>(null);
     const [newPass, setNewPass] = useState('');
 
     useEffect(() => {
@@ -33,16 +49,14 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
     useEffect(() => {
         if (user.role !== 'admin') return;
 
-        // جلب المستخدمين
         onValue(ref(db, 'users'), snapshot => {
             if (snapshot.exists()) {
-                const u: any[] = [];
-                snapshot.forEach(c => { u.push({ key: c.key, ...c.val() }); });
+                const u: User[] = [];
+                snapshot.forEach(c => { u.push({ key: c.key || '', ...c.val() }); });
                 setUsers(u);
             }
         });
 
-        // جلب الماركتات مع تفاصيل المنشئ
         onValue(ref(db, 'settings/markets'), snapshot => {
             if(snapshot.exists()){
                 const m: any[] = [];
@@ -58,7 +72,6 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
             }
         });
 
-        // جلب الشركات مع تفاصيل المنشئ
         onValue(ref(db, 'settings/companies'), snapshot => {
             if(snapshot.exists()){
                 const c: any[] = [];
@@ -82,21 +95,23 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
         } catch (e) { alert('خطأ في الحفظ'); }
     };
 
-    const togglePermission = (key: keyof AppSettings['permissions']) => {
-        setLocalSettings(prev => ({
-            ...prev,
-            permissions: {
-                ...prev.permissions,
-                [key]: !prev.permissions[key]
-            }
-        }));
-    };
-
     const handleAddUser = async () => {
         if (!newUser.username || !newUser.password || !newUser.name) return alert("اكمل بيانات المستخدم");
         await push(ref(db, 'users'), newUser);
         alert("تمت إضافة المستخدم بنجاح");
-        setNewUser({ name: '', username: '', password: '', role: 'user', canViewAllSales: false });
+        setNewUser({ 
+            name: '', 
+            username: '', 
+            password: '', 
+            role: 'user', 
+            canViewAllSales: false,
+            permissions: {
+                showSalesLog: true,
+                showInventoryLog: false,
+                showInventoryReg: false,
+                showCompetitorReports: false
+            }
+        });
     };
 
     const handleDeleteUser = async (key: string) => {
@@ -111,6 +126,27 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
         alert("تم تحديث كلمة المرور");
         setPassModal(null);
         setNewPass('');
+    };
+
+    const handleUpdatePermissions = async () => {
+        if (!permModal || !permModal.key) return;
+        await update(ref(db, `users/${permModal.key}`), { 
+            permissions: permModal.permissions,
+            canViewAllSales: permModal.canViewAllSales
+        });
+        alert("تم تحديث الصلاحيات بنجاح");
+        setPermModal(null);
+    };
+
+    const toggleUserPerm = (key: keyof UserPermissions) => {
+        if (!permModal) return;
+        setPermModal({
+            ...permModal,
+            permissions: {
+                ...permModal.permissions!,
+                [key]: !permModal.permissions![key]
+            }
+        });
     };
 
     if (user.role !== 'admin') {
@@ -159,41 +195,16 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 </button>
             </div>
 
-            {/* صلاحيات الوصول للمستخدمين */}
-            <div className={sectionClass}>
-                <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-indigo-600 border-b pb-3">
-                    <Shield size={20} /> إدارة صلاحيات الأقسام (للمستخدمين)
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {[
-                        { key: 'showSalesLog', label: 'عرض سجل المبيعات' },
-                        { key: 'showInventoryReg', label: 'تسجيل المخزون' },
-                        { key: 'showInventoryLog', label: 'عرض سجل المخزون' },
-                        { key: 'showCompetitorReports', label: 'عرض تقارير المنافسين' }
-                    ].map(perm => (
-                        <div key={perm.key} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-black/20 rounded-xl">
-                            <span className="font-bold">{perm.label}</span>
-                            <button 
-                                onClick={() => togglePermission(perm.key as keyof AppSettings['permissions'])}
-                                className={`p-1 rounded-full transition ${localSettings.permissions[perm.key as keyof AppSettings['permissions']] ? 'text-green-600' : 'text-gray-400'}`}
-                            >
-                                {localSettings.permissions[perm.key as keyof AppSettings['permissions']] ? <ToggleRight size={32} /> : <ToggleLeft size={32} />}
-                            </button>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
             {/* إدارة المستخدمين */}
             <div className={sectionClass}>
                 <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-purple-600 border-b pb-3">
-                    <Users size={20} /> إدارة حسابات الموظفين
+                    <Users size={20} /> إدارة حسابات وصلاحيات الموظفين
                 </h3>
                 
                 {/* إضافة مستخدم جديد */}
                 <div className="bg-gray-50 dark:bg-black/20 p-6 rounded-2xl mb-6 border border-gray-200 dark:border-gray-700">
                     <h4 className="font-bold mb-4 flex items-center gap-2 text-sm"><UserPlus size={16}/> إضافة موظف جديد</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <input className={inputClass} placeholder="الاسم الكامل" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
                         <input className={inputClass} placeholder="اسم المستخدم" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} />
                         <input className={inputClass} type="password" placeholder="كلمة المرور" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
@@ -201,12 +212,8 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                             <option value="user">موظف (User)</option>
                             <option value="admin">مسؤول (Admin)</option>
                         </select>
-                        <div className="flex items-center gap-2 px-2">
-                             <input type="checkbox" id="viewSales" checked={newUser.canViewAllSales} onChange={e => setNewUser({...newUser, canViewAllSales: e.target.checked})} />
-                             <label htmlFor="viewSales" className="text-xs font-bold">رؤية كل مبيعات الزملاء</label>
-                        </div>
-                        <button onClick={handleAddUser} className="bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition">إضافة الموظف</button>
                     </div>
+                    <button onClick={handleAddUser} className="mt-4 w-full bg-green-600 text-white font-bold py-2 rounded-lg hover:bg-green-700 transition">إضافة الموظف</button>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -216,8 +223,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                                 <th className="p-3">الاسم</th>
                                 <th className="p-3">المستخدم</th>
                                 <th className="p-3">الدور</th>
-                                <th className="p-3">صلاحية الرؤية</th>
-                                <th className="p-3 text-center">إجراءات</th>
+                                <th className="p-3 text-center">الإجراءات</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -230,10 +236,10 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                                             {u.role === 'admin' ? 'مسؤول' : 'موظف'}
                                         </span>
                                     </td>
-                                    <td className="p-3">{u.canViewAllSales ? 'نعم' : 'لا'}</td>
                                     <td className="p-3 flex justify-center gap-2">
-                                        <button onClick={() => setPassModal({key: u.key, name: u.name})} className="p-2 text-orange-500 hover:bg-orange-50 rounded" title="تغيير كلمة المرور"><Key size={16}/></button>
-                                        <button onClick={() => handleDeleteUser(u.key)} className="p-2 text-red-500 hover:bg-red-50 rounded" title="حذف الحساب"><Trash2 size={16}/></button>
+                                        <button onClick={() => setPermModal(u)} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="تعديل صلاحيات الأقسام"><Shield size={16}/></button>
+                                        <button onClick={() => setPassModal({key: u.key!, name: u.name})} className="p-2 text-orange-500 hover:bg-orange-50 rounded" title="تغيير كلمة المرور"><Key size={16}/></button>
+                                        <button onClick={() => handleDeleteUser(u.key!)} className="p-2 text-red-500 hover:bg-red-50 rounded" title="حذف الحساب"><Trash2 size={16}/></button>
                                     </td>
                                 </tr>
                             ))}
@@ -242,8 +248,72 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 </div>
             </div>
 
-            {/* إدارة الماركت والشركات (البيانات الرئيسية) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Modal: تعديل الصلاحيات الفردية */}
+            {permModal && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[70] p-4 backdrop-blur-sm">
+                    <div className={`w-full max-w-md p-6 rounded-2xl shadow-2xl ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-white text-black'}`}>
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-bold flex items-center gap-2 text-blue-600">
+                                <Shield size={20} /> صلاحيات: {permModal.name}
+                            </h3>
+                            <button onClick={() => setPermModal(null)} className="p-1 hover:bg-gray-100 rounded-full"><X /></button>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+                                <span className="font-bold text-sm">رؤية مبيعات الزملاء</span>
+                                <button onClick={() => setPermModal({...permModal, canViewAllSales: !permModal.canViewAllSales})} className="text-blue-600">
+                                    {permModal.canViewAllSales ? <ToggleRight size={32} /> : <ToggleLeft size={32} />}
+                                </button>
+                            </div>
+
+                            <div className="space-y-2">
+                                <p className="text-xs font-bold text-gray-400 px-1 uppercase tracking-wider">ظهور الأقسام</p>
+                                {[
+                                    { key: 'showSalesLog', label: 'سجل المبيعات' },
+                                    { key: 'showInventoryReg', label: 'تسجيل المخزون' },
+                                    { key: 'showInventoryLog', label: 'سجل المخزون' },
+                                    { key: 'showCompetitorReports', label: 'تقارير المنافسين' }
+                                ].map(p => (
+                                    <div key={p.key} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-black/20 rounded-xl border border-gray-100 dark:border-gray-800">
+                                        <span className="text-sm font-medium">{p.label}</span>
+                                        <button onClick={() => toggleUserPerm(p.key as keyof UserPermissions)} className={permModal.permissions?.[p.key as keyof UserPermissions] ? 'text-green-600' : 'text-gray-400'}>
+                                            {permModal.permissions?.[p.key as keyof UserPermissions] ? <ToggleRight size={30} /> : <ToggleLeft size={30} />}
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <button onClick={handleUpdatePermissions} className="w-full mt-6 bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2">
+                            <Save size={18} /> حفظ الصلاحيات المحدثة
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal: تغيير كلمة المرور */}
+            {passModal && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[70] p-4 backdrop-blur-sm">
+                    <div className={`w-full max-w-sm p-6 rounded-2xl shadow-2xl ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-white text-black'}`}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold">تغيير كلمة مرور: {passModal.name}</h3>
+                            <button onClick={() => setPassModal(null)}><X /></button>
+                        </div>
+                        <input 
+                            type="password" 
+                            className={inputClass} 
+                            placeholder="كلمة المرور الجديدة" 
+                            value={newPass} 
+                            onChange={e => setNewPass(e.target.value)} 
+                        />
+                        <button onClick={handleUpdatePassword} className="w-full mt-4 bg-orange-600 text-white py-2 rounded-xl font-bold shadow-lg">تحديث كلمة المرور</button>
+                    </div>
+                </div>
+            )}
+
+             {/* إدارة الماركت والشركات */}
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className={sectionClass}>
                     <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-blue-500 border-b pb-2">
                         <MapPin size={18} /> إدارة الماركتات
@@ -278,26 +348,6 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                     </div>
                 </div>
             </div>
-
-            {/* Modal: تغيير كلمة المرور */}
-            {passModal && (
-                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[70] p-4 backdrop-blur-sm">
-                    <div className={`w-full max-w-sm p-6 rounded-2xl shadow-2xl ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-white text-black'}`}>
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold">تغيير كلمة مرور: {passModal.name}</h3>
-                            <button onClick={() => setPassModal(null)}><X /></button>
-                        </div>
-                        <input 
-                            type="password" 
-                            className={inputClass} 
-                            placeholder="كلمة المرور الجديدة" 
-                            value={newPass} 
-                            onChange={e => setNewPass(e.target.value)} 
-                        />
-                        <button onClick={handleUpdatePassword} className="w-full mt-4 bg-orange-600 text-white py-2 rounded-xl font-bold shadow-lg">تحديث كلمة المرور</button>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };

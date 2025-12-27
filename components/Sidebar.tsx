@@ -27,7 +27,6 @@ interface UserStatus {
 const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, user, theme, containerClass, settings }) => {
     const [onlineUsers, setOnlineUsers] = useState<UserStatus[]>([]);
 
-    // Load Online Status for Admin
     useEffect(() => {
         if (user.role === 'admin') {
             const statusRef = ref(db, 'status');
@@ -40,8 +39,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, user, theme, co
                         online: data[key].online || false
                     }));
                     
-                    // Filter: Only show users who have been online recently or are currently online
-                    // Sort: Online users first, then alphabetically by name
                     const sortedList = list.sort((a, b) => {
                         if (a.online === b.online) {
                             return a.name.localeCompare(b.name, 'ar');
@@ -58,26 +55,28 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, user, theme, co
         }
     }, [user.role]);
 
-    // Define all possible items
     const allItems = [
         { id: 'sales', label: 'المبيعات اليومية', icon: ShoppingCart, alwaysShow: true },
-        { id: 'salesLog', label: 'سجل المبيعات', icon: FileText, permission: settings.permissions?.showSalesLog },
-        { id: 'inventoryReg', label: 'تسجيل المخزون', icon: PackagePlus, permission: settings.permissions?.showInventoryReg },
-        { id: 'inventoryLog', label: 'سجل المخزون', icon: ClipboardList, permission: settings.permissions?.showInventoryLog },
+        { id: 'salesLog', label: 'سجل المبيعات', icon: FileText, permissionKey: 'showSalesLog' },
+        { id: 'inventoryReg', label: 'تسجيل المخزون', icon: PackagePlus, permissionKey: 'showInventoryReg' },
+        { id: 'inventoryLog', label: 'سجل المخزون', icon: ClipboardList, permissionKey: 'showInventoryLog' },
         { id: 'competitorPrices', label: 'أسعار المنافسين', icon: TrendingUp, alwaysShow: true },
-        { id: 'competitorReports', label: 'تقارير المنافسين', icon: BarChart2, permission: settings.permissions?.showCompetitorReports },
+        { id: 'competitorReports', label: 'تقارير المنافسين', icon: BarChart2, permissionKey: 'showCompetitorReports' },
         { id: 'leaveBalance', label: 'رصيد الإجازات', icon: CalendarOff, alwaysShow: true },
         { id: 'settings', label: 'الإعدادات', icon: SettingsIcon, adminOnly: true },
     ];
 
-    // Filter items logic
     const menuItems = allItems.filter(item => {
         if (user.role === 'admin') return true;
         if (item.adminOnly) return false;
-        if (item.permission !== undefined) {
-            return item.permission === true;
+        if (item.alwaysShow) return true;
+        
+        // Check per-user permissions
+        if (item.permissionKey && user.permissions) {
+            return (user.permissions as any)[item.permissionKey] === true;
         }
-        return true;
+        
+        return false;
     });
 
     const getButtonClass = (isActive: boolean) => {
@@ -126,7 +125,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, user, theme, co
                     </button>
                 ))}
 
-                {/* Online Users Section - Only for Admin */}
                 {user.role === 'admin' && (
                     <div className="mt-8 border-t pt-4 border-gray-500/20">
                         <div className="flex items-center gap-2 mb-4 px-2 text-xs font-bold uppercase text-gray-400">
