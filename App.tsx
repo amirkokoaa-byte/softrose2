@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { db } from './firebase';
-import { ref, onValue, set, update, onDisconnect, serverTimestamp } from "firebase/database";
+import { ref, onValue, set, update, onDisconnect, serverTimestamp, remove } from "firebase/database";
 import { User, AppSettings, AppNotification } from './types';
 import Login from './components/Login';
 import Sidebar from './components/Sidebar';
@@ -13,7 +13,7 @@ import CompetitorPrices from './components/CompetitorPrices';
 import CompetitorReports from './components/CompetitorReports';
 import LeaveBalanceComponent from './components/LeaveBalance';
 import Settings from './components/Settings';
-import { Home, LogOut, Phone, Wifi, WifiOff, Menu, X, Palette, Bell, MailOpen, Check } from 'lucide-react';
+import { Home, LogOut, Phone, Wifi, WifiOff, Menu, X, Palette, Bell, MailOpen, Check, Trash2, Clock, Copy, ExternalLink } from 'lucide-react';
 import { INITIAL_MARKETS } from './constants';
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -42,6 +42,7 @@ const App: React.FC = () => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+  const [selectedNotif, setSelectedNotif] = useState<AppNotification | null>(null);
 
   useEffect(() => {
     const settingsRef = ref(db, 'settings/app');
@@ -87,6 +88,9 @@ const App: React.FC = () => {
             const list = Object.keys(data).map(key => ({ id: key, ...data[key] })).sort((a,b) => b.timestamp - a.timestamp);
             setNotifications(list);
             setUnreadCount(list.filter(n => !n.isRead).length);
+        } else {
+            setNotifications([]);
+            setUnreadCount(0);
         }
     });
   }, [user?.username]);
@@ -98,6 +102,21 @@ const App: React.FC = () => {
     }
     localStorage.removeItem('soft_rose_user');
     setUser(null);
+  };
+
+  const markAsRead = (id: string) => {
+    if (!user) return;
+    update(ref(db, `notifications/${user.username}/${id}`), { isRead: true });
+  };
+
+  const deleteNotif = (id: string) => {
+    if (!user) return;
+    remove(ref(db, `notifications/${user.username}/${id}`));
+  };
+
+  const copyNotifText = (text: string) => {
+    navigator.clipboard.writeText(text);
+    alert("تم نسخ نص الرسالة");
   };
 
   if (!user) return <Login onLogin={setUser} theme={theme} />;
@@ -177,10 +196,47 @@ const App: React.FC = () => {
                 )}
             </div>
 
-            <button onClick={() => setShowNotifDropdown(!showNotifDropdown)} className="relative p-2 rounded-full hover:bg-black/10">
-                <Bell size={20} />
-                {unreadCount > 0 && <span className="absolute top-1 right-1 bg-red-600 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full border border-white">{unreadCount}</span>}
-            </button>
+            {/* زر الجرس (الإشعارات) */}
+            <div className="relative">
+                <button onClick={() => setShowNotifDropdown(!showNotifDropdown)} className={`relative p-2 rounded-full hover:bg-black/10 ${showNotifDropdown ? 'bg-black/10' : ''}`}>
+                    <Bell size={20} />
+                    {unreadCount > 0 && <span className="absolute top-1 right-1 bg-red-600 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full border border-white">{unreadCount}</span>}
+                </button>
+                {showNotifDropdown && (
+                    <div className="absolute left-0 mt-2 w-72 md:w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 z-[60] text-black">
+                        <div className="p-4 bg-gray-50 border-b flex justify-between items-center">
+                            <h3 className="font-bold text-sm flex items-center gap-2"><Bell size={16} className="text-blue-600"/> الإشعارات</h3>
+                            <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">{unreadCount} جديدة</span>
+                        </div>
+                        <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                            {notifications.length === 0 ? (
+                                <div className="p-10 text-center opacity-30 italic text-sm">لا توجد إشعارات حالياً</div>
+                            ) : (
+                                notifications.map(n => (
+                                    <div 
+                                      key={n.id} 
+                                      onClick={() => { setSelectedNotif(n); markAsRead(n.id!); setShowNotifDropdown(false); }}
+                                      className={`p-4 border-b last:border-0 hover:bg-blue-50/50 transition relative group cursor-pointer ${!n.isRead ? 'bg-blue-50/30' : ''}`}
+                                    >
+                                        <div className="flex justify-between items-start mb-1">
+                                            <span className="text-[10px] font-bold text-blue-600 flex items-center gap-1"><Clock size={10}/> {new Date(n.timestamp).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}</span>
+                                            <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                                                {!n.isRead && <button onClick={() => markAsRead(n.id!)} className="p-1 text-green-600 hover:bg-green-100 rounded" title="تعليم كمقروء"><Check size={12}/></button>}
+                                                <button onClick={() => deleteNotif(n.id!)} className="p-1 text-red-500 hover:bg-red-100 rounded" title="حذف"><Trash2 size={12}/></button>
+                                            </div>
+                                        </div>
+                                        <div className="text-xs font-bold mb-0.5 flex items-center gap-1">{n.sender} <ExternalLink size={10} className="opacity-30"/></div>
+                                        <div className="text-[11px] leading-relaxed opacity-70 line-clamp-2">{n.message}</div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        {notifications.length > 0 && (
+                            <button onClick={() => setShowNotifDropdown(false)} className="w-full p-2 text-center text-[10px] font-bold text-gray-400 hover:bg-gray-50 border-t">إغلاق القائمة</button>
+                        )}
+                    </div>
+                )}
+            </div>
 
             <div className="text-sm hidden lg:block opacity-70">مرحباً، <span className="font-bold">{user.name}</span></div>
             
@@ -189,6 +245,45 @@ const App: React.FC = () => {
             </button>
         </div>
       </header>
+
+      {/* Modal عرض تفاصيل الرسالة */}
+      {selectedNotif && (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4 backdrop-blur-sm animate-in fade-in duration-200">
+              <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden text-black animate-in zoom-in duration-300">
+                  <div className="p-6 border-b bg-gray-50 flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white">
+                              <Bell size={20}/>
+                          </div>
+                          <div>
+                              <h3 className="font-bold text-lg">رسالة من: {selectedNotif.sender}</h3>
+                              <p className="text-[10px] text-gray-400 font-bold">{new Date(selectedNotif.timestamp).toLocaleString('ar-EG')}</p>
+                          </div>
+                      </div>
+                      <button onClick={() => setSelectedNotif(null)} className="p-2 hover:bg-gray-200 rounded-full transition"><X/></button>
+                  </div>
+                  <div className="p-8 bg-white min-h-[150px]">
+                      <div className="text-sm leading-relaxed whitespace-pre-wrap select-all bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
+                          {selectedNotif.message}
+                      </div>
+                  </div>
+                  <div className="p-4 bg-gray-50 border-t flex gap-3">
+                      <button 
+                          onClick={() => copyNotifText(selectedNotif.message)} 
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition transform active:scale-95"
+                      >
+                          <Copy size={18}/> نسخ النص
+                      </button>
+                      <button 
+                          onClick={() => setSelectedNotif(null)} 
+                          className="px-6 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 rounded-xl transition"
+                      >
+                          إغلاق
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden relative">
         <div className={`absolute top-0 bottom-0 right-0 z-30 h-full transition-transform duration-300 md:relative md:transform-none ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>

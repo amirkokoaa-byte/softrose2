@@ -80,7 +80,6 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
         await push(ref(db, 'sales'), saleData);
         setNotification('تم حفظ المبيعات بنجاح!');
         // Reset only values, but keep the custom items for a while? Or clear all?
-        // Let's clear custom items and reset fixed ones
         setSalesItems(prev => {
             const fixedOnly = prev.filter(i => !i.isCustom).map(i => ({...i, price: 0, qty: 0}));
             return fixedOnly;
@@ -128,6 +127,16 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
                             <Plus size={14}/> اضف صنف
                         </button>
                     </div>
+
+                    {/* سطر الترويسة الجديد */}
+                    <div className="grid grid-cols-12 gap-1 items-center bg-gray-500/10 p-2 rounded mb-2 text-[10px] md:text-xs font-bold opacity-70">
+                        <div className="col-span-4 pr-2">الصنف</div>
+                        <div className="col-span-3 text-center">سعر القطعة</div>
+                        <div className="col-span-2 text-center">العدد</div>
+                        <div className="col-span-2 text-center">الإجمالي</div>
+                        <div className="col-span-1"></div>
+                    </div>
+
                     <div className="space-y-2">
                         {salesItems.filter(item => item.category === cat.key).map((item) => (
                             <div key={item.id} className="grid grid-cols-12 gap-1 items-center bg-black/5 p-1 rounded">

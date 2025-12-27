@@ -2,11 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { ref, set, push, onValue, remove, update } from "firebase/database";
-import { User, AppSettings, UserPermissions } from '../types';
+import { User, AppSettings, UserPermissions, AppNotification } from '../types';
 import { 
   Save, Trash2, UserPlus, Shield, Edit2, Plus, X, 
   Settings as SettingsIcon, Users, MapPin, Building2, 
-  ToggleLeft, ToggleRight, Key, Eye, EyeOff
+  ToggleLeft, ToggleRight, Key, Eye, EyeOff, Send
 } from 'lucide-react';
 
 interface Props {
@@ -40,7 +40,9 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
     // Modals
     const [passModal, setPassModal] = useState<{key: string, name: string} | null>(null);
     const [permModal, setPermModal] = useState<User | null>(null);
+    const [notifModal, setNotifModal] = useState<{username: string, name: string} | null>(null);
     const [newPass, setNewPass] = useState('');
+    const [notifMsg, setNotifMsg] = useState('');
 
     useEffect(() => {
         setLocalSettings(settings);
@@ -130,7 +132,6 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
 
     const handleUpdatePermissions = async () => {
         if (!permModal || !permModal.key) return;
-        // Ensure permissions object exists
         const permissions = permModal.permissions || {
             showSalesLog: false,
             showInventoryLog: false,
@@ -145,17 +146,28 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
         setPermModal(null);
     };
 
+    const handleSendNotif = async () => {
+        if (!notifModal || !notifMsg) return;
+        const notification: AppNotification = {
+            message: notifMsg,
+            sender: user.name,
+            timestamp: Date.now(),
+            isRead: false
+        };
+        await push(ref(db, `notifications/${notifModal.username}`), notification);
+        alert(`تم إرسال الرسالة بنجاح إلى ${notifModal.name}`);
+        setNotifModal(null);
+        setNotifMsg('');
+    };
+
     const toggleUserPerm = (key: keyof UserPermissions) => {
         if (!permModal) return;
-        
-        // Provide defaults if permissions are missing (prevents undefined crash)
         const currentPermissions = permModal.permissions || {
             showSalesLog: false,
             showInventoryLog: false,
             showInventoryReg: false,
             showCompetitorReports: false
         };
-
         setPermModal({
             ...permModal,
             permissions: {
@@ -252,7 +264,8 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                                             {u.role === 'admin' ? 'مسؤول' : 'موظف'}
                                         </span>
                                     </td>
-                                    <td className="p-3 flex justify-center gap-2">
+                                    <td className="p-3 flex justify-center gap-1 md:gap-2">
+                                        <button onClick={() => setNotifModal({username: u.username, name: u.name})} className="p-2 text-green-600 hover:bg-green-50 rounded" title="إرسال رسالة تنبيه"><Send size={16}/></button>
                                         <button onClick={() => setPermModal(u)} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="تعديل صلاحيات الأقسام"><Shield size={16}/></button>
                                         <button onClick={() => setPassModal({key: u.key!, name: u.name})} className="p-2 text-orange-500 hover:bg-orange-50 rounded" title="تغيير كلمة المرور"><Key size={16}/></button>
                                         <button onClick={() => handleDeleteUser(u.key!)} className="p-2 text-red-500 hover:bg-red-50 rounded" title="حذف الحساب"><Trash2 size={16}/></button>
@@ -263,6 +276,44 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                     </table>
                 </div>
             </div>
+
+            {/* Modal: إرسال تنبيه */}
+            {notifModal && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[70] p-4 backdrop-blur-sm">
+                    <div className={`w-full max-w-md p-6 rounded-2xl shadow-2xl ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-white text-black'}`}>
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-bold flex items-center gap-2 text-green-600">
+                                <Send size={20} /> إرسال رسالة إلى: {notifModal.name}
+                            </h3>
+                            <button onClick={() => setNotifModal(null)} className="p-1 hover:bg-gray-100 rounded-full"><X /></button>
+                        </div>
+                        <div className="space-y-4">
+                            <div>
+                                <div className="flex justify-between items-end mb-1">
+                                    <label className="block text-xs font-bold opacity-60">نص الرسالة</label>
+                                    <span className={`text-[10px] font-bold ${notifMsg.length >= 1900 ? 'text-red-500' : 'text-gray-400'}`}>
+                                        {notifMsg.length} / 2000
+                                    </span>
+                                </div>
+                                <textarea 
+                                    className={`${inputClass} min-h-[120px] resize-none ${notifMsg.length >= 2000 ? 'border-red-300' : ''}`} 
+                                    placeholder="اكتب رسالتك هنا (بحد أقصى 2000 حرف)..." 
+                                    value={notifMsg} 
+                                    maxLength={2000}
+                                    onChange={e => setNotifMsg(e.target.value)}
+                                />
+                            </div>
+                            <button 
+                                onClick={handleSendNotif} 
+                                disabled={!notifMsg}
+                                className="w-full bg-green-600 text-white py-3 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 transition hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <Send size={18} /> إرسال التنبيه فوراً
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Modal: تعديل الصلاحيات الفردية */}
             {permModal && (
