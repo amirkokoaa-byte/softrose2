@@ -23,28 +23,35 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
     const [selectedMarket, setSelectedMarket] = useState('');
     const [selectedCompany, setSelectedCompany] = useState('');
     const [companies, setCompanies] = useState<string[]>(COMPANIES);
-    
-    // Structure: items for current view
     const [items, setItems] = useState<{category: string, name: string, price: number}[]>([]);
 
-    // Load Companies list
     useEffect(() => {
         onValue(ref(db, 'settings/companies'), s => {
-            if(s.exists()) setCompanies(Object.values(s.val()));
-        });
-    }, []);
+            if(s.exists()) {
+                const data = s.val();
+                const allCompanies: any[] = Object.keys(data).map(key => {
+                    if (typeof data[key] === 'string') return { name: data[key], createdBy: 'system' };
+                    return data[key];
+                });
 
-    // Helper to generate a safe Firebase path for templates
+                if (user.role === 'admin') {
+                    setCompanies(allCompanies.map(c => c.name));
+                } else {
+                    const filtered = allCompanies.filter(c => c.createdBy === 'system' || c.createdBy === user.username);
+                    setCompanies(filtered.map(c => c.name));
+                }
+            }
+        });
+    }, [user.username, user.role]);
+
     const getTemplatePath = () => {
         if (!selectedMarket || !selectedCompany || !user.username) return null;
-        // Sanitize strings to be safe for Firebase paths
         const safeUser = user.username.replace(/[.#$/[\]]/g, "_");
         const safeMarket = selectedMarket.replace(/[.#$/[\]]/g, "_");
         const safeCompany = selectedCompany.replace(/[.#$/[\]]/g, "_");
         return `competitor_templates/${safeUser}/${safeMarket}/${safeCompany}`;
     };
 
-    // Helper: Generate Default Items from a list
     const generateDefaultsFromList = (facial: string[], kitchen: string[], toilet: string[]) => {
         const defaultItems: {category: string, name: string, price: number}[] = [];
         facial.forEach(name => defaultItems.push({ category: 'مناديل سحب (Facial)', name, price: 0 }));
@@ -53,7 +60,6 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
         return defaultItems;
     };
 
-    // Load Template when Market/Company changes
     useEffect(() => {
         const path = getTemplatePath();
         if (path) {
@@ -62,7 +68,6 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
                 if (snapshot.exists()) {
                     setItems(snapshot.val());
                 } else {
-                    // Logic: If no template exists for this user, load company defaults
                     if (selectedCompany === 'Soft Rose') {
                         setItems(generateDefaultsFromList(PRODUCTS_FACIAL, PRODUCTS_KITCHEN, PRODUCTS_TOILET));
                     } else if (selectedCompany === 'Fine') {
@@ -74,7 +79,7 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
                     } else if (selectedCompany === 'White') {
                         setItems(generateDefaultsFromList(WHITE_FACIAL, WHITE_KITCHEN, WHITE_TOILET));
                     } else {
-                        setItems([]); // Clear for other companies
+                        setItems([]);
                     }
                 }
             });
@@ -84,19 +89,13 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
         }
     }, [selectedMarket, selectedCompany, user.username]);
 
-    // Update Template in Firebase
     const updateTemplate = async (newItems: any[]) => {
         const path = getTemplatePath();
-        if (path) {
-            await set(ref(db, path), newItems);
-        }
+        if (path) await set(ref(db, path), newItems);
     };
 
     const addItem = (category: string) => {
-        if (!selectedMarket || !selectedCompany) {
-            alert("يرجى اختيار الماركت والشركة أولاً");
-            return;
-        }
+        if (!selectedMarket || !selectedCompany) return alert("يرجى اختيار الماركت والشركة أولاً");
         const newItems = [...items, { category, name: '', price: 0 }];
         setItems(newItems);
         updateTemplate(newItems);
@@ -107,8 +106,6 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
         // @ts-ignore
         newItems[index][field] = value;
         setItems(newItems);
-        // We update template on name change to save the "Item Name", 
-        // price updates are also saved but are transient until "Save Report".
         updateTemplate(newItems);
     };
 
@@ -122,13 +119,8 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
 
     const handleSaveReport = async () => {
         if (!selectedMarket || !selectedCompany) return alert("اكمل البيانات");
-        
         const validItems = items.filter(i => i.name && i.price > 0);
-        
-        if (validItems.length === 0) {
-            return alert("لا يوجد أصناف مسعرة للحفظ");
-        }
-
+        if (validItems.length === 0) return alert("لا يوجد أصناف مسعرة للحفظ");
         const data = {
             market: selectedMarket,
             company: selectedCompany,
@@ -136,42 +128,24 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
             employeeName: user.name,
             items: validItems
         };
-        
-        try {
-            await push(ref(db, 'competitor_prices'), data);
-            alert("تم حفظ تقرير أسعار المنافسين");
-            
-            // Clear prices after saving
-            const clearedItems = items.map(item => ({ ...item, price: 0 }));
-            setItems(clearedItems);
-            updateTemplate(clearedItems);
-            
-        } catch (error) {
-            console.error("Error saving competitor report:", error);
-            alert("حدث خطأ أثناء حفظ التقرير");
-        }
+        await push(ref(db, 'competitor_prices'), data);
+        alert("تم حفظ تقرير أسعار المنافسين");
+        const clearedItems = items.map(item => ({ ...item, price: 0 }));
+        setItems(clearedItems);
+        updateTemplate(clearedItems);
     };
 
     const addCompany = async () => {
-        if (user.role !== 'admin') return;
         const name = prompt("اسم الشركة:");
-        if(name) await push(ref(db, 'settings/companies'), name);
+        if(name) await push(ref(db, 'settings/companies'), { name, createdBy: user.username });
     };
 
     const handleAddMarket = async () => {
         const name = prompt("ادخل اسم الماركت الجديد:");
-        if (name) {
-             await push(ref(db, 'settings/markets'), name);
-        }
-    };
-
-    const deleteMarket = async () => {
-        if(user.role !== 'admin') return;
-        alert("خاصية الحذف تحتاج تحديد الماركت من الاعدادات");
+        if (name) await push(ref(db, 'settings/markets'), { name, createdBy: user.username });
     };
 
     const categories = ['مناديل سحب (Facial)', 'مناديل مطبخ (Kitchen)', 'تواليت (Toilet)'];
-
     const inputClass = "border p-2 rounded w-full text-black";
 
     return (
@@ -185,14 +159,9 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
                             <option value="">اختر الماركت</option>
                             {markets.map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
-                        
                         <button onClick={handleAddMarket} className="bg-blue-600 text-white p-2 rounded shrink-0" title="إضافة ماركت جديد">
                             <Plus size={18}/>
                         </button>
-
-                        {user.role === 'admin' && (
-                            <button onClick={deleteMarket} className="bg-red-500 text-white p-2 rounded shrink-0"><Trash size={18}/></button>
-                        )}
                     </div>
                 </div>
                 <div>
@@ -202,75 +171,43 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
                             <option value="">اختر الشركة</option>
                             {companies.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
-                         {user.role === 'admin' && (
-                            <button onClick={addCompany} className="bg-blue-500 text-white p-2 rounded shrink-0"><Plus size={18}/></button>
-                        )}
+                         <button onClick={addCompany} className="bg-blue-500 text-white p-2 rounded shrink-0"><Plus size={18}/></button>
                     </div>
                 </div>
             </div>
 
-            {/* Hint Message */}
             {selectedMarket && selectedCompany && (
                 <div className="text-sm text-blue-600 bg-blue-50 p-3 rounded-lg border border-blue-100">
                     ملاحظة: الأصناف المثبتة خاصة بحسابك فقط لهذا الماركت والشركة.
-                    {selectedCompany === 'Soft Rose' && <span className="block font-bold mt-1">تم تحميل منتجات Soft Rose.</span>}
-                    {selectedCompany === 'Fine' && <span className="block font-bold mt-1">تم تحميل منتجات Fine.</span>}
-                    {selectedCompany === 'Zeina' && <span className="block font-bold mt-1">تم تحميل منتجات Zeina.</span>}
-                    {selectedCompany === 'Papia Familia' && <span className="block font-bold mt-1">تم تحميل منتجات Papia & Familia.</span>}
-                    {selectedCompany === 'White' && <span className="block font-bold mt-1">تم تحميل منتجات White.</span>}
                 </div>
             )}
 
             {categories.map(cat => (
                 <div key={cat} className="border border-gray-200/20 p-4 rounded-xl bg-white/5">
                     <h3 className="font-bold mb-4 text-yellow-600 border-b border-gray-200/10 pb-2 text-lg">{cat}</h3>
-                    
-                    {/* Header Row for alignment */}
                     <div className="flex gap-2 mb-2 px-1 text-[10px] md:text-xs font-bold opacity-60 uppercase">
                         <div className="flex-1">اسم الصنف</div>
                         <div className="w-24 md:w-32 text-center">السعر</div>
                         <div className="w-8"></div>
                     </div>
-
                     <div className="space-y-2">
                         {items.map((item, idx) => item.category === cat && (
                             <div key={idx} className="flex flex-row gap-2 items-center">
                                 <div className="flex-1 min-w-0">
-                                    <input 
-                                        placeholder="اسم الصنف" 
-                                        className={`${inputClass} text-xs md:text-sm h-10`} 
-                                        value={item.name} 
-                                        onChange={e => updateItem(idx, 'name', e.target.value)}
-                                    />
+                                    <input placeholder="اسم الصنف" className={`${inputClass} text-xs md:text-sm h-10`} value={item.name} onChange={e => updateItem(idx, 'name', e.target.value)} />
                                 </div>
                                 <div className="w-24 md:w-32 flex-shrink-0">
-                                    <input 
-                                        type="number" 
-                                        placeholder="السعر" 
-                                        className={`${inputClass} text-center text-xs md:text-sm h-10`} 
-                                        value={item.price || ''}
-                                        onChange={e => updateItem(idx, 'price', e.target.value)}
-                                    />
+                                    <input type="number" placeholder="السعر" className={`${inputClass} text-center text-xs md:text-sm h-10`} value={item.price || ''} onChange={e => updateItem(idx, 'price', e.target.value)} />
                                 </div>
-                                <button 
-                                    onClick={() => deleteItem(idx)}
-                                    className="p-1.5 text-red-500 hover:bg-red-50 rounded transition shrink-0"
-                                    title="حذف الصنف"
-                                >
-                                    <Trash2 size={16} />
-                                </button>
+                                <button onClick={() => deleteItem(idx)} className="p-1.5 text-red-500 hover:bg-red-50 rounded transition shrink-0"><Trash2 size={16} /></button>
                             </div>
                         ))}
                     </div>
-                    <button 
-                        onClick={() => addItem(cat)} 
-                        className="mt-4 text-xs bg-gray-100 hover:bg-white text-black px-4 py-2 rounded-lg shadow-sm border border-gray-200 transition w-full md:w-auto flex items-center justify-center gap-1"
-                    >
+                    <button onClick={() => addItem(cat)} className="mt-4 text-xs bg-gray-100 hover:bg-white text-black px-4 py-2 rounded-lg shadow-sm border border-gray-200 transition w-full md:w-auto flex items-center justify-center gap-1">
                         <Plus size={14}/> اضف منتج جديد
                     </button>
                 </div>
             ))}
-
             <button onClick={handleSaveReport} className="bg-green-600 hover:bg-green-700 w-full py-4 text-white rounded-2xl font-bold shadow-xl text-lg transition transform active:scale-[0.98] flex items-center justify-center gap-2">
                 <Save size={24} /> حفظ التقرير وترحيله
             </button>
