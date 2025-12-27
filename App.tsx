@@ -13,7 +13,7 @@ import CompetitorPrices from './components/CompetitorPrices';
 import CompetitorReports from './components/CompetitorReports';
 import LeaveBalanceComponent from './components/LeaveBalance';
 import Settings from './components/Settings';
-import { Home, LogOut, Phone, Wifi, WifiOff, Menu, X, Palette, Bell, MailOpen } from 'lucide-react';
+import { Home, LogOut, Phone, Wifi, WifiOff, Menu, X, Palette, Bell, MailOpen, Check } from 'lucide-react';
 import { INITIAL_MARKETS } from './constants';
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -53,28 +53,19 @@ const App: React.FC = () => {
     });
 
     onValue(marketsRef, (snapshot) => {
-      // 1. الماركتات الافتراضية للنظام
       const systemMarkets = INITIAL_MARKETS.map(name => ({ name, createdBy: 'system' }));
-      
-      // 2. الماركتات المضافة في قاعدة البيانات
       const dbMarkets = snapshot.exists() ? Object.values(snapshot.val()).map((m: any) => 
         typeof m === 'string' ? { name: m, createdBy: 'system' } : m
       ) : [];
-
-      // 3. دمج الجميع
       const allCombined = [...systemMarkets, ...dbMarkets];
 
       if (user) {
         let filtered;
         if (user.role === 'admin') {
-          // المسؤول يرى كل شيء
           filtered = allCombined;
         } else {
-          // المستخدم يرى الافتراضي + ما أضافه هو فقط
           filtered = allCombined.filter(m => m.createdBy === 'system' || m.createdBy === user.username);
         }
-        
-        // إزالة التكرار بناءً على الاسم
         const uniqueNames = Array.from(new Set(filtered.map(m => m.name)));
         setMarkets(uniqueNames);
       }
@@ -120,6 +111,13 @@ const App: React.FC = () => {
     }
   };
 
+  const themesList = [
+      { id: 'win10', name: 'ويندوز 10', color: 'bg-blue-600' },
+      { id: 'dark', name: 'الوضع الليلي', color: 'bg-gray-800' },
+      { id: 'glass', name: 'زجاجي مودرن', color: 'bg-purple-500' },
+      { id: 'light', name: 'فاتح كلاسيك', color: 'bg-white border' },
+  ];
+
   return (
     <div className={`${getThemeClasses()} flex flex-col overflow-hidden`}>
       {settings.tickerEnabled && (
@@ -128,20 +126,67 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <header className={`p-4 flex justify-between items-center ${theme === 'glass' ? 'bg-white/10' : theme === 'dark' ? 'bg-gray-800' : 'bg-white text-black shadow-md'}`}>
+      <header className={`p-4 flex justify-between items-center z-50 ${theme === 'glass' ? 'bg-white/10' : theme === 'dark' ? 'bg-gray-800' : 'bg-white text-black shadow-md'}`}>
         <div className="flex items-center gap-4">
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="md:hidden p-2 rounded hover:bg-black/10">
                 {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
             <h1 className="text-xl md:text-2xl font-bold truncate">{settings.appName}</h1>
         </div>
-        <div className="flex items-center gap-4">
+        
+        <div className="flex items-center gap-2 md:gap-4">
+            {/* زر الواتساب */}
+            {settings.whatsappNumber && (
+                <a 
+                    href={`https://wa.me/${settings.whatsappNumber}`} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="p-2 rounded-full hover:bg-green-500/10 text-green-600 transition-colors"
+                    title="الدعم الفني"
+                >
+                    <Phone size={20} />
+                </a>
+            )}
+
+            {/* زر الاستيلات */}
+            <div className="relative">
+                <button 
+                    onClick={() => setShowThemeSelector(!showThemeSelector)} 
+                    className={`p-2 rounded-full hover:bg-black/10 transition-colors ${showThemeSelector ? 'bg-black/10' : ''}`}
+                    title="تغيير المظهر"
+                >
+                    <Palette size={20} />
+                </button>
+                {showThemeSelector && (
+                    <div className="absolute left-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-gray-100 p-2 animate-in fade-in zoom-in duration-200 z-[60]">
+                        <div className="text-[10px] font-bold text-gray-400 px-3 py-1 uppercase mb-1">اختر المظهر</div>
+                        {themesList.map((t) => (
+                            <button 
+                                key={t.id}
+                                onClick={() => { setTheme(t.id as any); setShowThemeSelector(false); }}
+                                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition ${theme === t.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <div className={`w-3 h-3 rounded-full ${t.color}`} />
+                                    <span>{t.name}</span>
+                                </div>
+                                {theme === t.id && <Check size={14} />}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+
             <button onClick={() => setShowNotifDropdown(!showNotifDropdown)} className="relative p-2 rounded-full hover:bg-black/10">
                 <Bell size={20} />
                 {unreadCount > 0 && <span className="absolute top-1 right-1 bg-red-600 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full border border-white">{unreadCount}</span>}
             </button>
-            <div className="text-sm hidden md:block">مرحباً، <span className="font-bold">{user.name}</span></div>
-            <button onClick={handleLogout} className="text-red-500 p-1"><LogOut size={20} /></button>
+
+            <div className="text-sm hidden lg:block opacity-70">مرحباً، <span className="font-bold">{user.name}</span></div>
+            
+            <button onClick={handleLogout} className="text-red-500 p-2 rounded-full hover:bg-red-500/10 transition-colors" title="تسجيل الخروج">
+                <LogOut size={20} />
+            </button>
         </div>
       </header>
 

@@ -130,9 +130,16 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
 
     const handleUpdatePermissions = async () => {
         if (!permModal || !permModal.key) return;
+        // Ensure permissions object exists
+        const permissions = permModal.permissions || {
+            showSalesLog: false,
+            showInventoryLog: false,
+            showInventoryReg: false,
+            showCompetitorReports: false
+        };
         await update(ref(db, `users/${permModal.key}`), { 
-            permissions: permModal.permissions,
-            canViewAllSales: permModal.canViewAllSales
+            permissions: permissions,
+            canViewAllSales: !!permModal.canViewAllSales
         });
         alert("تم تحديث الصلاحيات بنجاح");
         setPermModal(null);
@@ -140,11 +147,20 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
 
     const toggleUserPerm = (key: keyof UserPermissions) => {
         if (!permModal) return;
+        
+        // Provide defaults if permissions are missing (prevents undefined crash)
+        const currentPermissions = permModal.permissions || {
+            showSalesLog: false,
+            showInventoryLog: false,
+            showInventoryReg: false,
+            showCompetitorReports: false
+        };
+
         setPermModal({
             ...permModal,
             permissions: {
-                ...permModal.permissions!,
-                [key]: !permModal.permissions![key]
+                ...currentPermissions,
+                [key]: !currentPermissions[key]
             }
         });
     };

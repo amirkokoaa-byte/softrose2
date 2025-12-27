@@ -71,9 +71,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, user, theme, co
         if (item.adminOnly) return false;
         if (item.alwaysShow) return true;
         
-        // Check per-user permissions
-        if (item.permissionKey && user.permissions) {
-            return (user.permissions as any)[item.permissionKey] === true;
+        // Check per-user permissions with safety guards
+        if (item.permissionKey) {
+            const perms = user.permissions || {} as any;
+            return perms[item.permissionKey] === true;
         }
         
         return false;
