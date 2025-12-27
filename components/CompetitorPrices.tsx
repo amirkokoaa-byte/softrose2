@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { ref, push, set, onValue, remove } from "firebase/database";
+import { ref, push, set, onValue } from "firebase/database";
 import { User } from '../types';
 import { 
     COMPANIES, 
@@ -11,7 +11,7 @@ import {
     PAPIA_FACIAL, PAPIA_KITCHEN, PAPIA_TOILET,
     WHITE_FACIAL, WHITE_KITCHEN, WHITE_TOILET
 } from '../constants';
-import { Save, Plus, Trash, Trash2, X } from 'lucide-react';
+import { Save, Plus, Trash2 } from 'lucide-react';
 
 interface Props {
     user: User;
@@ -26,21 +26,24 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
     const [items, setItems] = useState<{category: string, name: string, price: number}[]>([]);
 
     useEffect(() => {
+        // فلترة الشركات بخصوصية
         onValue(ref(db, 'settings/companies'), s => {
-            if(s.exists()) {
-                const data = s.val();
-                const allCompanies: any[] = Object.keys(data).map(key => {
-                    if (typeof data[key] === 'string') return { name: data[key], createdBy: 'system' };
-                    return data[key];
-                });
+            const systemCompanies = COMPANIES.map(name => ({ name, createdBy: 'system' }));
+            const dbCompanies = s.exists() ? Object.values(s.val()).map((c: any) => 
+                typeof c === 'string' ? { name: c, createdBy: 'system' } : c
+            ) : [];
 
-                if (user.role === 'admin') {
-                    setCompanies(allCompanies.map(c => c.name));
-                } else {
-                    const filtered = allCompanies.filter(c => c.createdBy === 'system' || c.createdBy === user.username);
-                    setCompanies(filtered.map(c => c.name));
-                }
+            const allCombined = [...systemCompanies, ...dbCompanies];
+            
+            let filtered;
+            if (user.role === 'admin') {
+                filtered = allCombined;
+            } else {
+                filtered = allCombined.filter(c => c.createdBy === 'system' || c.createdBy === user.username);
             }
+            
+            const uniqueNames = Array.from(new Set(filtered.map(c => c.name)));
+            setCompanies(uniqueNames);
         });
     }, [user.username, user.role]);
 
@@ -63,31 +66,20 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
     useEffect(() => {
         const path = getTemplatePath();
         if (path) {
-            const templateRef = ref(db, path);
-            const unsubscribe = onValue(templateRef, (snapshot) => {
+            onValue(ref(db, path), (snapshot) => {
                 if (snapshot.exists()) {
                     setItems(snapshot.val());
                 } else {
-                    if (selectedCompany === 'Soft Rose') {
-                        setItems(generateDefaultsFromList(PRODUCTS_FACIAL, PRODUCTS_KITCHEN, PRODUCTS_TOILET));
-                    } else if (selectedCompany === 'Fine') {
-                        setItems(generateDefaultsFromList(FINE_FACIAL, FINE_KITCHEN, FINE_TOILET));
-                    } else if (selectedCompany === 'Zeina') {
-                        setItems(generateDefaultsFromList(ZEINA_FACIAL, ZEINA_KITCHEN, ZEINA_TOILET));
-                    } else if (selectedCompany === 'Papia Familia') {
-                        setItems(generateDefaultsFromList(PAPIA_FACIAL, PAPIA_KITCHEN, PAPIA_TOILET));
-                    } else if (selectedCompany === 'White') {
-                        setItems(generateDefaultsFromList(WHITE_FACIAL, WHITE_KITCHEN, WHITE_TOILET));
-                    } else {
-                        setItems([]);
-                    }
+                    if (selectedCompany === 'Soft Rose') setItems(generateDefaultsFromList(PRODUCTS_FACIAL, PRODUCTS_KITCHEN, PRODUCTS_TOILET));
+                    else if (selectedCompany === 'Fine') setItems(generateDefaultsFromList(FINE_FACIAL, FINE_KITCHEN, FINE_TOILET));
+                    else if (selectedCompany === 'Zeina') setItems(generateDefaultsFromList(ZEINA_FACIAL, ZEINA_KITCHEN, ZEINA_TOILET));
+                    else if (selectedCompany === 'Papia Familia') setItems(generateDefaultsFromList(PAPIA_FACIAL, PAPIA_KITCHEN, PAPIA_TOILET));
+                    else if (selectedCompany === 'White') setItems(generateDefaultsFromList(WHITE_FACIAL, WHITE_KITCHEN, WHITE_TOILET));
+                    else setItems([]);
                 }
             });
-            return () => unsubscribe();
-        } else {
-            setItems([]);
         }
-    }, [selectedMarket, selectedCompany, user.username]);
+    }, [selectedMarket, selectedCompany]);
 
     const updateTemplate = async (newItems: any[]) => {
         const path = getTemplatePath();
@@ -95,7 +87,6 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
     };
 
     const addItem = (category: string) => {
-        if (!selectedMarket || !selectedCompany) return alert("يرجى اختيار الماركت والشركة أولاً");
         const newItems = [...items, { category, name: '', price: 0 }];
         setItems(newItems);
         updateTemplate(newItems);
@@ -109,18 +100,9 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
         updateTemplate(newItems);
     };
 
-    const deleteItem = (index: number) => {
-        if (confirm("هل تريد حذف هذا الصنف من القائمة المثبتة؟")) {
-            const newItems = items.filter((_, i) => i !== index);
-            setItems(newItems);
-            updateTemplate(newItems);
-        }
-    };
-
     const handleSaveReport = async () => {
         if (!selectedMarket || !selectedCompany) return alert("اكمل البيانات");
         const validItems = items.filter(i => i.name && i.price > 0);
-        if (validItems.length === 0) return alert("لا يوجد أصناف مسعرة للحفظ");
         const data = {
             market: selectedMarket,
             company: selectedCompany,
@@ -129,15 +111,9 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
             items: validItems
         };
         await push(ref(db, 'competitor_prices'), data);
-        alert("تم حفظ تقرير أسعار المنافسين");
-        const clearedItems = items.map(item => ({ ...item, price: 0 }));
-        setItems(clearedItems);
-        updateTemplate(clearedItems);
-    };
-
-    const addCompany = async () => {
-        const name = prompt("اسم الشركة:");
-        if(name) await push(ref(db, 'settings/companies'), { name, createdBy: user.username });
+        alert("تم الحفظ");
+        setItems(items.map(i => ({...i, price: 0})));
+        updateTemplate(items.map(i => ({...i, price: 0})));
     };
 
     const handleAddMarket = async () => {
@@ -145,72 +121,56 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
         if (name) await push(ref(db, 'settings/markets'), { name, createdBy: user.username });
     };
 
-    const categories = ['مناديل سحب (Facial)', 'مناديل مطبخ (Kitchen)', 'تواليت (Toilet)'];
-    const inputClass = "border p-2 rounded w-full text-black";
+    const addCompany = async () => {
+        const name = prompt("اسم الشركة الجديدة:");
+        if(name) await push(ref(db, 'settings/companies'), { name, createdBy: user.username });
+    };
 
     return (
         <div className="space-y-6">
             <h2 className="text-2xl font-bold">تسجيل أسعار المنافسين</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white/5 p-4 rounded-lg text-black">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-100 p-4 rounded-lg">
                 <div>
-                    <label className="block mb-1 font-bold text-gray-700 dark:text-gray-300">الماركت</label>
+                    <label className="block mb-1 font-bold">الماركت</label>
                     <div className="flex gap-2">
-                        <select className={inputClass} value={selectedMarket} onChange={e => setSelectedMarket(e.target.value)}>
+                        <select className="border p-2 rounded w-full" value={selectedMarket} onChange={e => setSelectedMarket(e.target.value)}>
                             <option value="">اختر الماركت</option>
                             {markets.map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
-                        <button onClick={handleAddMarket} className="bg-blue-600 text-white p-2 rounded shrink-0" title="إضافة ماركت جديد">
-                            <Plus size={18}/>
-                        </button>
+                        <button onClick={handleAddMarket} className="bg-blue-600 text-white p-2 rounded"><Plus size={18}/></button>
                     </div>
                 </div>
                 <div>
-                    <label className="block mb-1 font-bold text-gray-700 dark:text-gray-300">الشركة</label>
+                    <label className="block mb-1 font-bold">الشركة</label>
                     <div className="flex gap-2">
-                         <select className={inputClass} value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)}>
+                         <select className="border p-2 rounded w-full" value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)}>
                             <option value="">اختر الشركة</option>
                             {companies.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
-                         <button onClick={addCompany} className="bg-blue-500 text-white p-2 rounded shrink-0"><Plus size={18}/></button>
+                         <button onClick={addCompany} className="bg-blue-500 text-white p-2 rounded"><Plus size={18}/></button>
                     </div>
                 </div>
             </div>
 
-            {selectedMarket && selectedCompany && (
-                <div className="text-sm text-blue-600 bg-blue-50 p-3 rounded-lg border border-blue-100">
-                    ملاحظة: الأصناف المثبتة خاصة بحسابك فقط لهذا الماركت والشركة.
-                </div>
-            )}
-
-            {categories.map(cat => (
-                <div key={cat} className="border border-gray-200/20 p-4 rounded-xl bg-white/5">
-                    <h3 className="font-bold mb-4 text-yellow-600 border-b border-gray-200/10 pb-2 text-lg">{cat}</h3>
-                    <div className="flex gap-2 mb-2 px-1 text-[10px] md:text-xs font-bold opacity-60 uppercase">
-                        <div className="flex-1">اسم الصنف</div>
-                        <div className="w-24 md:w-32 text-center">السعر</div>
-                        <div className="w-8"></div>
-                    </div>
+            {['مناديل سحب (Facial)', 'مناديل مطبخ (Kitchen)', 'تواليت (Toilet)'].map(cat => (
+                <div key={cat} className="border p-4 rounded-xl">
+                    <h3 className="font-bold mb-4 text-blue-600 border-b pb-2">{cat}</h3>
                     <div className="space-y-2">
-                        {items.map((item, idx) => item.category === cat && (
-                            <div key={idx} className="flex flex-row gap-2 items-center">
-                                <div className="flex-1 min-w-0">
-                                    <input placeholder="اسم الصنف" className={`${inputClass} text-xs md:text-sm h-10`} value={item.name} onChange={e => updateItem(idx, 'name', e.target.value)} />
+                        {items.filter(i => i.category === cat).map((item, idx) => {
+                            const actualIdx = items.indexOf(item);
+                            return (
+                                <div key={actualIdx} className="flex gap-2 items-center">
+                                    <input className="flex-1 border p-2 rounded text-sm" value={item.name} onChange={e => updateItem(actualIdx, 'name', e.target.value)} placeholder="اسم المنتج" />
+                                    <input type="number" className="w-24 border p-2 rounded text-center" value={item.price || ''} onChange={e => updateItem(actualIdx, 'price', e.target.value)} placeholder="السعر" />
+                                    <button onClick={() => { const n = items.filter((_, i) => i !== actualIdx); setItems(n); updateTemplate(n); }} className="text-red-500"><Trash2 size={18}/></button>
                                 </div>
-                                <div className="w-24 md:w-32 flex-shrink-0">
-                                    <input type="number" placeholder="السعر" className={`${inputClass} text-center text-xs md:text-sm h-10`} value={item.price || ''} onChange={e => updateItem(idx, 'price', e.target.value)} />
-                                </div>
-                                <button onClick={() => deleteItem(idx)} className="p-1.5 text-red-500 hover:bg-red-50 rounded transition shrink-0"><Trash2 size={16} /></button>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
-                    <button onClick={() => addItem(cat)} className="mt-4 text-xs bg-gray-100 hover:bg-white text-black px-4 py-2 rounded-lg shadow-sm border border-gray-200 transition w-full md:w-auto flex items-center justify-center gap-1">
-                        <Plus size={14}/> اضف منتج جديد
-                    </button>
+                    <button onClick={() => addItem(cat)} className="mt-2 text-xs bg-gray-200 p-2 rounded flex items-center gap-1"><Plus size={14}/> صنف جديد</button>
                 </div>
             ))}
-            <button onClick={handleSaveReport} className="bg-green-600 hover:bg-green-700 w-full py-4 text-white rounded-2xl font-bold shadow-xl text-lg transition transform active:scale-[0.98] flex items-center justify-center gap-2">
-                <Save size={24} /> حفظ التقرير وترحيله
-            </button>
+            <button onClick={handleSaveReport} className="bg-green-600 w-full py-4 text-white rounded-xl font-bold shadow-lg">حفظ وترحيل البيانات</button>
         </div>
     );
 };
