@@ -44,6 +44,7 @@ const Login: React.FC<Props> = ({ onLogin, theme }) => {
         try {
             if (cleanUsername === 'admin' && cleanPassword === 'admin') {
                 const adminUser: User = {
+                    key: 'admin_root',
                     username: 'admin',
                     name: 'Admin',
                     role: 'admin',
@@ -65,7 +66,7 @@ const Login: React.FC<Props> = ({ onLogin, theme }) => {
                 );
                 
                 if (userKey) {
-                    const userData = users[userKey];
+                    const userData = { ...users[userKey], key: userKey };
                     localStorage.setItem('soft_rose_user', JSON.stringify(userData));
                     onLogin(userData);
                 } else {
