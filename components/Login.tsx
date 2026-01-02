@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { ref, get, child } from "firebase/database";
@@ -164,6 +163,9 @@ const Login: React.FC<Props> = ({ onLogin, theme }) => {
                     <div className="mt-10 pt-6 border-t border-white/10 text-center">
                         <p className="text-[10px] font-bold opacity-30 uppercase tracking-[0.2em]">
                             Soft Rose Trading © 2024
+                        </p>
+                        <p className="text-[11px] font-bold text-blue-400 mt-2 opacity-60">
+                            مع تحيات المطور Amir Lamay
                         </p>
                     </div>
                 </div>

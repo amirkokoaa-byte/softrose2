@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { db } from './firebase';
 import { ref, onValue, set, update, onDisconnect, serverTimestamp, remove } from "firebase/database";
@@ -316,7 +315,6 @@ const App: React.FC = () => {
       )}
 
       <div className="flex flex-1 overflow-hidden relative">
-        {/* ... Sidebar and Main content ... */}
         <div className={`fixed md:relative top-0 bottom-0 right-0 z-50 h-full transition-transform duration-300 ease-in-out md:transform-none ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
             <Sidebar 
                 currentView={currentView} 
@@ -341,6 +339,11 @@ const App: React.FC = () => {
             </div>
         </main>
       </div>
+
+      {/* Footer Signature */}
+      <footer className={`py-2 px-4 text-center text-[10px] font-bold opacity-40 ${(theme === 'light' || theme === 'coffee') ? 'text-gray-500 border-t border-gray-200' : 'text-white border-t border-white/5'}`}>
+          مع تحيات المطور Amir Lamay
+      </footer>
     </div>
   );
 };
