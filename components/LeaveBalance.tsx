@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { ref, onValue, set, push, remove, update } from "firebase/database";
+import { ref, onValue, set, push, remove, update, get } from "firebase/database";
 import { User, LeaveBalance, LeaveRecord } from '../types';
 import { 
     Trash2, Edit, CalendarPlus, X, Save, History, 
@@ -74,12 +74,16 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
     // Auto-select logged-in user when modal opens if found in list
     useEffect(() => {
         if (showAddLeaveModal) {
-            const currentUserInList = usersList.find(u => u.name === user.name);
-            if (currentUserInList) {
-                setSelectedUser(currentUserInList.key);
+            if (user.role === 'admin') {
+                setSelectedUser(''); // Reset for admin to pick
+            } else {
+                const currentUserInList = usersList.find(u => u.name === user.name);
+                if (currentUserInList) {
+                    setSelectedUser(currentUserInList.key);
+                }
             }
         }
-    }, [showAddLeaveModal, usersList, user.name]);
+    }, [showAddLeaveModal, usersList, user.name, user.role]);
 
     // Period Logic
     const getPeriodEnd = (start: Date) => {
@@ -149,17 +153,61 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
 
     const handleDeleteRecord = async (recordId: string) => {
         if (user.role !== 'admin') return alert("عذراً، لا تملك صلاحية الحذف");
-        if (confirm("هل تريد حذف هذا السجل نهائياً؟")) {
+        const record = allHistory.find(r => r.id === recordId);
+        if (!record) return;
+
+        if (confirm("هل تريد حذف هذا السجل؟ سيتم إعادة الأيام المخصومة لرصيد الموظف تلقائياً.")) {
+            // Refund balance logic
+            const balanceRef = ref(db, `leave_balances/${record.userId}`);
+            const balanceSnap = await get(balanceRef);
+            if (balanceSnap.exists()) {
+                const currentBal = balanceSnap.val();
+                const updatedBal = { 
+                    ...currentBal, 
+                    [record.type]: Number(currentBal[record.type] || 0) + Number(record.days) 
+                };
+                await set(balanceRef, updatedBal);
+            }
+
             await remove(ref(db, `leave_history/${recordId}`));
+            alert("تم حذف السجل وإعادة الرصيد للموظف.");
         }
     };
 
     const handleUpdateRecord = async () => {
         if (!editingRecord || user.role !== 'admin') return;
-        const { id, ...recordData } = editingRecord;
-        await update(ref(db, `leave_history/${id}`), recordData);
-        alert("تم التعديل بنجاح");
-        setShowEditRecordModal(false);
+        
+        const originalRecord = allHistory.find(r => r.id === editingRecord.id);
+        if (!originalRecord) return;
+
+        try {
+            // Adjust balance if days changed
+            if (originalRecord.days !== editingRecord.days || originalRecord.type !== editingRecord.type) {
+                const balanceRef = ref(db, `leave_balances/${editingRecord.userId}`);
+                const balanceSnap = await get(balanceRef);
+                
+                if (balanceSnap.exists()) {
+                    let currentBal = balanceSnap.val();
+                    
+                    // 1. Refund old amount
+                    currentBal[originalRecord.type] = Number(currentBal[originalRecord.type] || 0) + Number(originalRecord.days);
+                    
+                    // 2. Subtract new amount
+                    currentBal[editingRecord.type] = Number(currentBal[editingRecord.type] || 0) - Number(editingRecord.days);
+                    
+                    await set(balanceRef, currentBal);
+                }
+            }
+
+            const { id, ...recordData } = editingRecord;
+            await update(ref(db, `leave_history/${id}`), recordData);
+            
+            alert("تم تعديل السجل وتحديث رصيد الموظف في الحال.");
+            setShowEditRecordModal(false);
+        } catch (error) {
+            console.error(error);
+            alert("حدث خطأ أثناء التحديث");
+        }
     };
 
     const openHistory = (userId: string, name: string) => {
@@ -290,18 +338,29 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
                 <div className={modalClass}>
                     <div className={modalContentClass}>
                         <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-bold">تعديل سجل الإجازة</h3>
+                            <h3 className="text-xl font-bold text-blue-600">تعديل سجل الإجازة</h3>
                             <button onClick={() => setShowEditRecordModal(false)}><X/></button>
                         </div>
                         <div className="space-y-4">
-                            <input type="date" className={inputClass} value={editingRecord.date} onChange={e => setEditingRecord({...editingRecord, date: e.target.value})} />
-                            <div className="grid grid-cols-2 gap-4">
-                                <input type="number" step="0.5" className={inputClass} value={editingRecord.days} onChange={e => setEditingRecord({...editingRecord, days: Number(e.target.value)})} placeholder="عدد الأيام" />
-                                <select className={inputClass} value={editingRecord.type} onChange={e => setEditingRecord({...editingRecord, type: e.target.value as any})}>
-                                    {Object.entries(typeLabels).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
-                                </select>
+                            <div>
+                                <label className="block text-xs font-bold mb-1 opacity-60">تاريخ الإجازة</label>
+                                <input type="date" className={inputClass} value={editingRecord.date} onChange={e => setEditingRecord({...editingRecord, date: e.target.value})} />
                             </div>
-                            <button onClick={handleUpdateRecord} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-lg flex items-center justify-center gap-2"><Save size={18}/> حفظ التعديلات</button>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold mb-1 opacity-60">عدد الأيام</label>
+                                    <input type="number" step="0.5" className={inputClass} value={editingRecord.days} onChange={e => setEditingRecord({...editingRecord, days: Number(e.target.value)})} placeholder="عدد الأيام" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold mb-1 opacity-60">نوع الإجازة</label>
+                                    <select className={inputClass} value={editingRecord.type} onChange={e => setEditingRecord({...editingRecord, type: e.target.value as any})}>
+                                        {Object.entries(typeLabels).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <button onClick={handleUpdateRecord} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 transition active:scale-95">
+                                <Save size={18}/> حفظ التعديلات فوراً
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -344,19 +403,31 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
                             <button onClick={() => setShowAddLeaveModal(false)}><X/></button>
                         </div>
                         <div className="space-y-4">
-                            <select className={inputClass} value={selectedUser} onChange={e => setSelectedUser(e.target.value)}>
-                                <option value="">-- اختر الموظف --</option>
-                                {usersList
-                                    .filter(u => u.name === user.name)
-                                    .map(u => <option key={u.key} value={u.key}>{u.name}</option>)
-                                }
-                            </select>
-                            <input type="date" className={inputClass} value={leaveDate} onChange={e => setLeaveDate(e.target.value)} />
-                            <div className="grid grid-cols-2 gap-4">
-                                <input type="number" min="0.5" step="0.5" className={inputClass} value={leaveDays} onChange={e => setLeaveDays(parseFloat(e.target.value))} placeholder="عدد الأيام" />
-                                <select className={inputClass} value={leaveType} onChange={e => setLeaveType(e.target.value as any)}>
-                                    {Object.entries(typeLabels).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+                            <div>
+                                <label className="block text-xs font-bold mb-1 opacity-60">اختيار الموظف</label>
+                                <select className={inputClass} value={selectedUser} onChange={e => setSelectedUser(e.target.value)}>
+                                    <option value="">-- اختر الموظف --</option>
+                                    {usersList
+                                        .filter(u => user.role === 'admin' || u.name === user.name)
+                                        .map(u => <option key={u.key} value={u.key}>{u.name}</option>)
+                                    }
                                 </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold mb-1 opacity-60">التاريخ</label>
+                                <input type="date" className={inputClass} value={leaveDate} onChange={e => setLeaveDate(e.target.value)} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold mb-1 opacity-60">الأيام</label>
+                                    <input type="number" min="0.5" step="0.5" className={inputClass} value={leaveDays} onChange={e => setLeaveDays(parseFloat(e.target.value))} placeholder="عدد الأيام" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold mb-1 opacity-60">النوع</label>
+                                    <select className={inputClass} value={leaveType} onChange={e => setLeaveType(e.target.value as any)}>
+                                        {Object.entries(typeLabels).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+                                    </select>
+                                </div>
                             </div>
                             <button onClick={handleAddLeave} className="w-full bg-red-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-red-500/20 transition transform active:scale-95">تأكيد وتسجيل الخصم</button>
                         </div>

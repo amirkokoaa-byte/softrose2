@@ -41,6 +41,8 @@ export interface UserPermissions {
     showInventoryLog: boolean;
     showInventoryReg: boolean;
     showCompetitorReports: boolean;
+    showDailySales: boolean;
+    showCompetitorPrices: boolean;
 }
 
 export interface User {

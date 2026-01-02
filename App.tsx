@@ -25,14 +25,16 @@ const DEFAULT_SETTINGS: AppSettings = {
     showSalesLog: true, 
     showInventoryLog: false, 
     showInventoryReg: false, 
-    showCompetitorReports: false 
+    showCompetitorReports: false,
+    showDailySales: true,
+    showCompetitorPrices: true
   }
 };
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [currentView, setCurrentView] = useState<string>('sales');
-  const [theme, setTheme] = useState<'glass' | 'dark' | 'win10' | 'light'>('win10');
+  const [theme, setTheme] = useState<'glass' | 'dark' | 'win10' | 'light' | 'ocean' | 'forest' | 'midnight' | 'coffee' | 'royal'>('dark');
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [markets, setMarkets] = useState<string[]>([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -122,91 +124,127 @@ const App: React.FC = () => {
   if (!user) return <Login onLogin={setUser} theme={theme} />;
 
   const getThemeClasses = () => {
-    switch(theme) {
-        case 'glass': return "bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 min-h-screen text-white";
-        case 'dark': return "bg-gray-900 text-white min-h-screen";
-        case 'win10': return "bg-[#0078D7] min-h-screen font-sans";
-        default: return "bg-gray-100 text-gray-800 min-h-screen";
+    switch (theme) {
+      case 'dark': return "bg-black text-white min-h-screen";
+      case 'glass': return "bg-[#1a0b2e] text-white min-h-screen bg-[url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop')] bg-cover bg-fixed";
+      case 'win10': return "bg-[#002b4a] text-white min-h-screen";
+      case 'light': return "bg-gray-100 text-gray-900 min-h-screen";
+      case 'ocean': return "bg-[#004d40] text-white min-h-screen";
+      case 'forest': return "bg-[#1b3022] text-white min-h-screen";
+      case 'midnight': return "bg-[#0a001a] text-white min-h-screen";
+      case 'coffee': return "bg-[#f5f1ed] text-[#3e2723] min-h-screen";
+      case 'royal': return "bg-[#121212] text-[#d4af37] min-h-screen";
+      default: return "bg-black text-white min-h-screen";
     }
   };
 
   const themesList = [
       { id: 'win10', name: 'ويندوز 10', color: 'bg-blue-600' },
-      { id: 'dark', name: 'الوضع الليلي', color: 'bg-gray-800' },
+      { id: 'dark', name: 'الوضع الليلي (أسود)', color: 'bg-black border border-white/20' },
       { id: 'glass', name: 'زجاجي مودرن', color: 'bg-purple-500' },
       { id: 'light', name: 'فاتح كلاسيك', color: 'bg-white border' },
+      { id: 'ocean', name: 'أعماق البحار', color: 'bg-teal-700' },
+      { id: 'forest', name: 'الغابة المظلمة', color: 'bg-emerald-900' },
+      { id: 'midnight', name: 'منتصف الليل', color: 'bg-indigo-950' },
+      { id: 'coffee', name: 'كافيه دافئ', color: 'bg-[#d7ccc8]' },
+      { id: 'royal', name: 'الملكي الأسود والذهبي', color: 'bg-[#d4af37]' },
   ];
 
+  const headerBg = () => {
+      if (theme === 'light' || theme === 'coffee') return 'bg-white/90 border-b border-gray-200 text-gray-900 shadow backdrop-blur-md';
+      if (theme === 'glass') return 'bg-black/40 backdrop-blur-lg border-b border-white/10 text-white';
+      if (theme === 'royal') return 'bg-black/80 border-b border-[#d4af37]/30 text-[#d4af37] shadow-xl';
+      return 'bg-black/60 backdrop-blur-md border-b border-white/10 text-white shadow-lg';
+  };
+
+  const mainContentBg = () => {
+      if (theme === 'light') return 'bg-white border border-gray-200';
+      if (theme === 'coffee') return 'bg-white/80 border border-[#d7ccc8] shadow-sm';
+      if (theme === 'glass') return 'bg-white/10 backdrop-blur-md border border-white/10';
+      if (theme === 'win10') return 'bg-[#003d66]/60 border border-white/10';
+      if (theme === 'ocean') return 'bg-[#00695c]/40 border border-white/5';
+      if (theme === 'forest') return 'bg-[#2e4d38]/40 border border-white/5';
+      if (theme === 'midnight') return 'bg-[#150036]/60 border border-white/5';
+      if (theme === 'royal') return 'bg-black/40 border border-[#d4af37]/20 shadow-inner';
+      return 'bg-gray-900/40 border border-white/5';
+  };
+
   return (
-    <div className={`${getThemeClasses()} flex flex-col overflow-hidden`}>
+    <div className={`${getThemeClasses()} flex flex-col overflow-hidden transition-all duration-700`}>
       {settings.tickerEnabled && (
-        <div className="bg-black text-yellow-400 py-1 overflow-hidden whitespace-nowrap border-b border-yellow-600">
-           <div className="animate-marquee inline-block px-4">{settings.tickerText}</div>
+        <div className={`${(theme === 'light' || theme === 'coffee') ? 'bg-gray-200/80 text-blue-600' : 'bg-black/80 text-yellow-400'} py-1 overflow-hidden whitespace-nowrap border-b border-white/10 z-50 backdrop-blur-md`}>
+           <div className="animate-marquee inline-block px-4 font-bold">{settings.tickerText}</div>
         </div>
       )}
 
-      <header className={`p-4 flex justify-between items-center z-50 ${theme === 'glass' ? 'bg-white/10' : theme === 'dark' ? 'bg-gray-800' : 'bg-white text-black shadow-md'}`}>
+      <header className={`p-4 flex justify-between items-center z-50 ${headerBg()} transition-all duration-500`}>
         <div className="flex items-center gap-4">
-            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="md:hidden p-2 rounded hover:bg-black/10">
+            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="md:hidden p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition-all">
                 {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
-            <h1 className="text-xl md:text-2xl font-bold truncate">{settings.appName}</h1>
+            <h1 className="text-lg md:text-2xl font-bold truncate flex items-center gap-2">
+                {settings.appName}
+                <span className={`text-sm font-normal opacity-60 hidden sm:inline-block border-r border-current pr-2 mr-2`}>
+                  | <span className="font-bold">{user.name}</span>
+                </span>
+            </h1>
         </div>
         
         <div className="flex items-center gap-2 md:gap-4">
-            {/* زر الواتساب */}
             {settings.whatsappNumber && (
                 <a 
                     href={`https://wa.me/${settings.whatsappNumber}`} 
                     target="_blank" 
                     rel="noopener noreferrer" 
-                    className="p-2 rounded-full hover:bg-green-500/10 text-green-600 transition-colors"
+                    className="p-2 rounded-full hover:bg-green-500/10 text-green-500 transition-colors"
                     title="الدعم الفني"
                 >
                     <Phone size={20} />
                 </a>
             )}
 
-            {/* زر الاستيلات */}
-            <div className="relative">
-                <button 
-                    onClick={() => setShowThemeSelector(!showThemeSelector)} 
-                    className={`p-2 rounded-full hover:bg-black/10 transition-colors ${showThemeSelector ? 'bg-black/10' : ''}`}
-                    title="تغيير المظهر"
-                >
-                    <Palette size={20} />
-                </button>
-                {showThemeSelector && (
-                    <div className="absolute left-0 mt-2 w-48 bg-white rounded-xl shadow-2xl border border-gray-100 p-2 animate-in fade-in zoom-in duration-200 z-[60]">
-                        <div className="text-[10px] font-bold text-gray-400 px-3 py-1 uppercase mb-1">اختر المظهر</div>
-                        {themesList.map((t) => (
-                            <button 
-                                key={t.id}
-                                onClick={() => { setTheme(t.id as any); setShowThemeSelector(false); }}
-                                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition ${theme === t.id ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'}`}
-                            >
-                                <div className="flex items-center gap-2">
-                                    <div className={`w-3 h-3 rounded-full ${t.color}`} />
-                                    <span>{t.name}</span>
-                                </div>
-                                {theme === t.id && <Check size={14} />}
-                            </button>
-                        ))}
-                    </div>
-                )}
-            </div>
+            {user.role === 'admin' && (
+              <div className="relative">
+                  <button 
+                      onClick={() => setShowThemeSelector(!showThemeSelector)} 
+                      className={`p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors ${showThemeSelector ? 'bg-black/10 dark:bg-white/10' : ''}`}
+                      title="تغيير المظهر"
+                  >
+                      <Palette size={20} />
+                  </button>
+                  {showThemeSelector && (
+                      <div className="absolute left-0 mt-2 w-52 bg-gray-900 text-white rounded-xl shadow-2xl border border-white/10 p-2 animate-in fade-in zoom-in duration-200 z-[60]">
+                          <div className="text-[10px] font-bold text-gray-400 px-3 py-1 uppercase mb-1">اختر المظهر الجديد</div>
+                          <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                            {themesList.map((t) => (
+                                <button 
+                                    key={t.id}
+                                    onClick={() => { setTheme(t.id as any); setShowThemeSelector(false); }}
+                                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs transition mb-0.5 ${theme === t.id ? 'bg-blue-600/30 text-blue-400' : 'text-gray-300 hover:bg-white/5'}`}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-3 h-3 rounded-full ${t.color}`} />
+                                        <span>{t.name}</span>
+                                    </div>
+                                    {theme === t.id && <Check size={14} />}
+                                </button>
+                            ))}
+                          </div>
+                      </div>
+                  )}
+              </div>
+            )}
 
-            {/* زر الجرس (الإشعارات) */}
             <div className="relative">
-                <button onClick={() => setShowNotifDropdown(!showNotifDropdown)} className={`relative p-2 rounded-full hover:bg-black/10 ${showNotifDropdown ? 'bg-black/10' : ''}`}>
+                <button onClick={() => setShowNotifDropdown(!showNotifDropdown)} className={`relative p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 ${showNotifDropdown ? 'bg-black/10 dark:bg-white/10' : ''}`}>
                     <Bell size={20} />
-                    {unreadCount > 0 && <span className="absolute top-1 right-1 bg-red-600 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full border border-white">{unreadCount}</span>}
+                    {unreadCount > 0 && <span className="absolute top-1 right-1 bg-red-600 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full border border-black">{unreadCount}</span>}
                 </button>
                 {showNotifDropdown && (
-                    <div className="absolute left-0 mt-2 w-72 md:w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 z-[60] text-black">
-                        <div className="p-4 bg-gray-50 border-b flex justify-between items-center">
-                            <h3 className="font-bold text-sm flex items-center gap-2"><Bell size={16} className="text-blue-600"/> الإشعارات</h3>
-                            <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">{unreadCount} جديدة</span>
+                    <div className="absolute left-0 mt-2 w-72 md:w-80 bg-gray-900 text-white rounded-2xl shadow-2xl border border-white/10 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 z-[60]">
+                        <div className="p-4 bg-black border-b border-white/10 flex justify-between items-center">
+                            <h3 className="font-bold text-sm flex items-center gap-2 text-white"><Bell size={16} className="text-blue-500"/> الإشعارات</h3>
+                            <span className="text-[10px] bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded-full font-bold">{unreadCount} جديدة</span>
                         </div>
                         <div className="max-h-80 overflow-y-auto custom-scrollbar">
                             {notifications.length === 0 ? (
@@ -216,29 +254,27 @@ const App: React.FC = () => {
                                     <div 
                                       key={n.id} 
                                       onClick={() => { setSelectedNotif(n); markAsRead(n.id!); setShowNotifDropdown(false); }}
-                                      className={`p-4 border-b last:border-0 hover:bg-blue-50/50 transition relative group cursor-pointer ${!n.isRead ? 'bg-blue-50/30' : ''}`}
+                                      className={`p-4 border-b border-white/5 last:border-0 hover:bg-white/5 transition relative group cursor-pointer ${!n.isRead ? 'bg-blue-600/10' : ''}`}
                                     >
-                                        <div className="flex justify-between items-start mb-1">
-                                            <span className="text-[10px] font-bold text-blue-600 flex items-center gap-1"><Clock size={10}/> {new Date(n.timestamp).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}</span>
+                                        <div className="flex justify-between items-start mb-1 text-white">
+                                            <span className="text-[10px] font-bold text-blue-400 flex items-center gap-1"><Clock size={10}/> {new Date(n.timestamp).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}</span>
                                             <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                                                {!n.isRead && <button onClick={() => markAsRead(n.id!)} className="p-1 text-green-600 hover:bg-green-100 rounded" title="تعليم كمقروء"><Check size={12}/></button>}
-                                                <button onClick={() => deleteNotif(n.id!)} className="p-1 text-red-500 hover:bg-red-100 rounded" title="حذف"><Trash2 size={12}/></button>
+                                                {!n.isRead && <button onClick={() => markAsRead(n.id!)} className="p-1 text-green-400 hover:bg-green-600/10 rounded" title="تعليم كمقروء"><Check size={12}/></button>}
+                                                <button onClick={() => deleteNotif(n.id!)} className="p-1 text-red-400 hover:bg-red-600/10 rounded" title="حذف"><Trash2 size={12}/></button>
                                             </div>
                                         </div>
-                                        <div className="text-xs font-bold mb-0.5 flex items-center gap-1">{n.sender} <ExternalLink size={10} className="opacity-30"/></div>
-                                        <div className="text-[11px] leading-relaxed opacity-70 line-clamp-2">{n.message}</div>
+                                        <div className="text-xs font-bold mb-0.5 flex items-center gap-1 text-white">{n.sender} <ExternalLink size={10} className="opacity-30"/></div>
+                                        <div className="text-[11px] leading-relaxed opacity-70 line-clamp-2 text-white">{n.message}</div>
                                     </div>
                                 ))
                             )}
                         </div>
                         {notifications.length > 0 && (
-                            <button onClick={() => setShowNotifDropdown(false)} className="w-full p-2 text-center text-[10px] font-bold text-gray-400 hover:bg-gray-50 border-t">إغلاق القائمة</button>
+                            <button onClick={() => setShowNotifDropdown(false)} className="w-full p-2 text-center text-[10px] font-bold text-gray-500 hover:bg-white/5 border-t border-white/10">إغلاق القائمة</button>
                         )}
                     </div>
                 )}
             </div>
-
-            <div className="text-sm hidden lg:block opacity-70">مرحباً، <span className="font-bold">{user.name}</span></div>
             
             <button onClick={handleLogout} className="text-red-500 p-2 rounded-full hover:bg-red-500/10 transition-colors" title="تسجيل الخروج">
                 <LogOut size={20} />
@@ -246,51 +282,27 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Modal عرض تفاصيل الرسالة */}
-      {selectedNotif && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4 backdrop-blur-sm animate-in fade-in duration-200">
-              <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden text-black animate-in zoom-in duration-300">
-                  <div className="p-6 border-b bg-gray-50 flex justify-between items-center">
-                      <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white">
-                              <Bell size={20}/>
-                          </div>
-                          <div>
-                              <h3 className="font-bold text-lg">رسالة من: {selectedNotif.sender}</h3>
-                              <p className="text-[10px] text-gray-400 font-bold">{new Date(selectedNotif.timestamp).toLocaleString('ar-EG')}</p>
-                          </div>
-                      </div>
-                      <button onClick={() => setSelectedNotif(null)} className="p-2 hover:bg-gray-200 rounded-full transition"><X/></button>
-                  </div>
-                  <div className="p-8 bg-white min-h-[150px]">
-                      <div className="text-sm leading-relaxed whitespace-pre-wrap select-all bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
-                          {selectedNotif.message}
-                      </div>
-                  </div>
-                  <div className="p-4 bg-gray-50 border-t flex gap-3">
-                      <button 
-                          onClick={() => copyNotifText(selectedNotif.message)} 
-                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition transform active:scale-95"
-                      >
-                          <Copy size={18}/> نسخ النص
-                      </button>
-                      <button 
-                          onClick={() => setSelectedNotif(null)} 
-                          className="px-6 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 rounded-xl transition"
-                      >
-                          إغلاق
-                      </button>
-                  </div>
-              </div>
-          </div>
-      )}
-
       <div className="flex flex-1 overflow-hidden relative">
-        <div className={`absolute top-0 bottom-0 right-0 z-30 h-full transition-transform duration-300 md:relative md:transform-none ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
-            <Sidebar currentView={currentView} setView={(view) => { setCurrentView(view); setIsSidebarOpen(false); }} user={user} theme={theme} settings={settings} containerClass={`${theme === 'glass' ? 'bg-white/10 backdrop-blur-md' : theme === 'dark' ? 'bg-gray-800' : 'bg-gray-50 border-l border-gray-200'} h-full shadow-xl`} />
+        {isSidebarOpen && (
+            <div 
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
+                onClick={() => setIsSidebarOpen(false)}
+            />
+        )}
+        
+        <div className={`fixed md:relative top-0 bottom-0 right-0 z-50 h-full transition-transform duration-300 ease-in-out md:transform-none ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
+            <Sidebar 
+                currentView={currentView} 
+                setView={(view) => { setCurrentView(view); setIsSidebarOpen(false); }} 
+                user={user} 
+                theme={theme} 
+                settings={settings} 
+                containerClass={`${(theme === 'light' || theme === 'coffee') ? 'bg-white border-l border-gray-200' : theme === 'royal' ? 'bg-[#0a0a0a] border-l border-[#d4af37]/20' : 'bg-black/40 backdrop-blur-md border-l border-white/10'} h-full shadow-2xl`} 
+            />
         </div>
-        <main className="flex-1 p-2 md:p-4 overflow-y-auto w-full">
-            <div className={`p-4 md:p-6 min-h-full ${theme === 'win10' ? 'bg-white text-black border-2 border-[#005a9e]' : 'bg-white/90 backdrop-blur-sm rounded-xl shadow-lg text-black'}`}>
+        
+        <main className="flex-1 p-2 md:p-4 overflow-y-auto w-full" onClick={() => isSidebarOpen && setIsSidebarOpen(false)}>
+            <div className={`p-4 md:p-6 min-h-full rounded-2xl shadow-lg ${mainContentBg()} transition-all duration-500`}>
                 {currentView === 'sales' && <DailySales user={user} markets={markets} theme={theme} />}
                 {currentView === 'salesLog' && <SalesLog user={user} markets={markets} theme={theme} />}
                 {currentView === 'inventoryReg' && <InventoryRegistration user={user} markets={markets} theme={theme} />}

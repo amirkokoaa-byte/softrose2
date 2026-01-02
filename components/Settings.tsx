@@ -30,7 +30,9 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
             showSalesLog: true,
             showInventoryLog: false,
             showInventoryReg: false,
-            showCompetitorReports: false
+            showCompetitorReports: false,
+            showDailySales: true,
+            showCompetitorPrices: true
         }
     });
     
@@ -111,7 +113,9 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 showSalesLog: true,
                 showInventoryLog: false,
                 showInventoryReg: false,
-                showCompetitorReports: false
+                showCompetitorReports: false,
+                showDailySales: true,
+                showCompetitorPrices: true
             }
         });
     };
@@ -136,7 +140,9 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
             showSalesLog: false,
             showInventoryLog: false,
             showInventoryReg: false,
-            showCompetitorReports: false
+            showCompetitorReports: false,
+            showDailySales: true,
+            showCompetitorPrices: true
         };
         await update(ref(db, `users/${permModal.key}`), { 
             permissions: permissions,
@@ -166,7 +172,9 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
             showSalesLog: false,
             showInventoryLog: false,
             showInventoryReg: false,
-            showCompetitorReports: false
+            showCompetitorReports: false,
+            showDailySales: true,
+            showCompetitorPrices: true
         };
         setPermModal({
             ...permModal,
@@ -337,9 +345,11 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                             <div className="space-y-2">
                                 <p className="text-xs font-bold text-gray-400 px-1 uppercase tracking-wider">ظهور الأقسام</p>
                                 {[
+                                    { key: 'showDailySales', label: 'المبيعات اليومية' },
                                     { key: 'showSalesLog', label: 'سجل المبيعات' },
                                     { key: 'showInventoryReg', label: 'تسجيل المخزون' },
                                     { key: 'showInventoryLog', label: 'سجل المخزون' },
+                                    { key: 'showCompetitorPrices', label: 'أسعار المنافسين' },
                                     { key: 'showCompetitorReports', label: 'تقارير المنافسين' }
                                 ].map(p => (
                                     <div key={p.key} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-black/20 rounded-xl border border-gray-100 dark:border-gray-800">

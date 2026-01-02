@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { ref, get, child } from "firebase/database";
 import { User } from '../types';
-import { Lock, User as UserIcon, Loader2 } from 'lucide-react';
+import { Lock, User as UserIcon, Loader2, ShieldCheck } from 'lucide-react';
 
 interface Props {
     onLogin: (user: User) => void;
@@ -15,7 +16,6 @@ const Login: React.FC<Props> = ({ onLogin, theme }) => {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    // Check if user was previously logged in
     useEffect(() => {
         const savedUser = localStorage.getItem('soft_rose_user');
         if (savedUser) {
@@ -32,18 +32,16 @@ const Login: React.FC<Props> = ({ onLogin, theme }) => {
         setError('');
         setLoading(true);
 
-        // Trim inputs to remove accidental spaces from mobile keyboards
         const cleanUsername = username.trim();
         const cleanPassword = password.trim();
 
         if (!cleanUsername || !cleanPassword) {
-            setError('يرجى إدخال اسم المستخدم وكلمة المرور');
+            setError('يرجى إدخال البيانات المطلوبة');
             setLoading(false);
             return;
         }
 
         try {
-            // Hardcoded fallback for emergency/initial access
             if (cleanUsername === 'admin' && cleanPassword === 'admin') {
                 const adminUser: User = {
                     username: 'admin',
@@ -61,7 +59,6 @@ const Login: React.FC<Props> = ({ onLogin, theme }) => {
             
             if (snapshot.exists()) {
                 const users = snapshot.val();
-                // Safe lookup with trimming and case-insensitive check if needed
                 const userKey = Object.keys(users).find(key => 
                     users[key].username?.toString().trim() === cleanUsername && 
                     users[key].password?.toString().trim() === cleanPassword
@@ -72,87 +69,108 @@ const Login: React.FC<Props> = ({ onLogin, theme }) => {
                     localStorage.setItem('soft_rose_user', JSON.stringify(userData));
                     onLogin(userData);
                 } else {
-                    setError('اسم المستخدم أو كلمة المرور غير صحيحة. تأكد من عدم وجود مسافات زائدة.');
+                    setError('بيانات الدخول غير صحيحة');
                 }
             } else {
-                setError('لا يوجد مستخدمين مسجلين في النظام.');
+                setError('لا يوجد مستخدمين مسجلين');
             }
         } catch (err) {
-            console.error(err);
-            setError('خطأ في الاتصال بقاعدة البيانات. تأكد من وجود إنترنت.');
+            setError('خطأ في الاتصال بالخادم');
         } finally {
             setLoading(false);
         }
     };
 
-    const containerClass = theme === 'dark' ? 'bg-gray-800 text-white' : 'bg-white/80 backdrop-blur-md text-gray-800';
-
     return (
-        <div className={`min-h-screen flex items-center justify-center p-4 ${theme === 'dark' ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-400 to-purple-500'}`}>
-            <div className={`w-full max-w-md p-8 rounded-2xl shadow-2xl ${containerClass}`}>
-                <div className="flex flex-col items-center mb-8">
-                    <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center mb-4 shadow-lg">
-                        <UserIcon size={40} className="text-white" />
-                    </div>
-                    <h2 className="text-3xl font-bold text-center">سوفت روز</h2>
-                    <p className="text-sm opacity-60">نظام التجارة الحديثة</p>
-                </div>
+        <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-[#00182b]">
+            {/* Background Image with Overlay */}
+            <div 
+                className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat scale-105"
+                style={{ 
+                    backgroundImage: `url('https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=2548&auto=format&fit=crop')`,
+                    filter: 'brightness(0.4) blur(3px)'
+                }}
+            />
 
-                <form onSubmit={handleLogin} className="space-y-5">
-                    <div>
-                        <label className="block mb-2 font-medium text-sm">اسم المستخدم</label>
-                        <div className="relative">
-                            <UserIcon className="absolute right-3 top-3 text-gray-400" size={18} />
-                            <input 
-                                type="text"
-                                value={username}
-                                onChange={e => setUsername(e.target.value)}
-                                className="w-full pr-10 pl-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-black bg-gray-50/50"
-                                placeholder="أدخل اسمك المسجل"
-                                required
-                                autoComplete="username"
-                            />
+            {/* Glassmorphism Card */}
+            <div className="w-full max-w-md z-10 relative group">
+                <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-cyan-500 rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
+                
+                <div className="relative bg-black/40 backdrop-blur-2xl border border-white/20 p-8 md:p-10 rounded-3xl shadow-2xl text-white">
+                    <div className="flex flex-col items-center mb-10">
+                        <div className="w-20 h-20 bg-gradient-to-br from-blue-500/80 to-cyan-400/80 rounded-2xl flex items-center justify-center mb-6 shadow-2xl border border-white/30 transform -rotate-6 group-hover:rotate-0 transition-transform duration-500">
+                            <ShieldCheck size={42} className="text-white drop-shadow-lg" />
                         </div>
+                        <h2 className="text-3xl font-black text-center tracking-tight mb-2">سوفت روز</h2>
+                        <div className="h-1 w-12 bg-blue-500 rounded-full mb-2"></div>
+                        <p className="text-xs font-bold uppercase tracking-[0.3em] opacity-60">Modern Trade System</p>
                     </div>
-                    <div>
-                        <label className="block mb-2 font-medium text-sm">كلمة المرور</label>
-                        <div className="relative">
-                            <Lock className="absolute right-3 top-3 text-gray-400" size={18} />
-                            <input 
-                                type="password"
-                                value={password}
-                                onChange={e => setPassword(e.target.value)}
-                                className="w-full pr-10 pl-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-black bg-gray-50/50"
-                                placeholder="••••••••"
-                                required
-                                autoComplete="current-password"
-                            />
-                        </div>
-                    </div>
-                    
-                    {error && (
-                        <div className="bg-red-100 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-xs text-center animate-pulse">
-                            {error}
-                        </div>
-                    )}
 
-                    <button 
-                        type="submit" 
-                        disabled={loading}
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition transform active:scale-95 flex items-center justify-center gap-2 shadow-lg"
-                    >
-                        {loading ? (
-                            <>
-                                <Loader2 className="animate-spin" size={20} />
-                                جاري التحقق...
-                            </>
-                        ) : 'دخول النظام'}
-                    </button>
-                </form>
-                <div className="mt-8 text-center text-xs opacity-50">
-                    في حال نسيان البيانات يرجى التواصل مع المدير
+                    <form onSubmit={handleLogin} className="space-y-6">
+                        <div className="space-y-2">
+                            <label className="block text-[10px] font-bold uppercase tracking-widest opacity-70 mr-1">اسم المستخدم</label>
+                            <div className="relative group/input">
+                                <UserIcon className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within/input:text-blue-400 transition-colors" size={18} />
+                                <input 
+                                    type="text"
+                                    value={username}
+                                    onChange={e => setUsername(e.target.value)}
+                                    className="w-full pr-12 pl-4 py-4 rounded-xl bg-white/5 border border-white/10 focus:border-blue-500/50 focus:bg-white/10 outline-none text-white transition-all placeholder:text-white/20 text-sm font-medium"
+                                    placeholder="Username"
+                                    required
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="block text-[10px] font-bold uppercase tracking-widest opacity-70 mr-1">كلمة المرور</label>
+                            <div className="relative group/input">
+                                <Lock className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within/input:text-blue-400 transition-colors" size={18} />
+                                <input 
+                                    type="password"
+                                    value={password}
+                                    onChange={e => setPassword(e.target.value)}
+                                    className="w-full pr-12 pl-4 py-4 rounded-xl bg-white/5 border border-white/10 focus:border-blue-500/50 focus:bg-white/10 outline-none text-white transition-all placeholder:text-white/20 text-sm font-medium"
+                                    placeholder="••••••••"
+                                    required
+                                />
+                            </div>
+                        </div>
+                        
+                        {error && (
+                            <div className="bg-red-500/20 border border-red-500/40 text-red-200 px-4 py-3 rounded-xl text-[11px] text-center font-bold animate-in fade-in slide-in-from-top-1">
+                                {error}
+                            </div>
+                        )}
+
+                        <button 
+                            type="submit" 
+                            disabled={loading}
+                            className="w-full relative group/btn overflow-hidden bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl transition-all duration-300 transform active:scale-[0.98] shadow-[0_0_20px_rgba(37,99,235,0.3)] hover:shadow-[0_0_30px_rgba(37,99,235,0.5)] flex items-center justify-center gap-3 mt-4"
+                        >
+                            <div className="absolute inset-0 w-1/2 h-full bg-white/20 -skew-x-[30deg] -translate-x-full group-hover/btn:animate-shine"></div>
+                            {loading ? (
+                                <>
+                                    <Loader2 className="animate-spin" size={20} />
+                                    <span className="text-sm">جاري المصادقة...</span>
+                                </>
+                            ) : (
+                                <span className="text-sm tracking-wide">تسجيل الدخول</span>
+                            )}
+                        </button>
+                    </form>
+
+                    <div className="mt-10 pt-6 border-t border-white/10 text-center">
+                        <p className="text-[10px] font-bold opacity-30 uppercase tracking-[0.2em]">
+                            Soft Rose Trading © 2024
+                        </p>
+                    </div>
                 </div>
             </div>
+
+            {/* Decorative Elements */}
+            <div className="absolute top-[-10%] left-[-5%] w-64 h-64 bg-blue-600/20 rounded-full blur-[100px] z-0"></div>
+            <div className="absolute bottom-[-10%] right-[-5%] w-96 h-96 bg-cyan-600/10 rounded-full blur-[120px] z-0"></div>
         </div>
     );
 };

@@ -3,60 +3,98 @@ body {
   font-family: 'Cairo', sans-serif;
   margin: 0;
   padding: 0;
+  overflow-x: hidden;
+  transition: background-color 0.5s ease;
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #888; 
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #555; 
+/* Default border color */
+* {
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
-/* Glassmorphism Classes */
-.glass {
-  background: rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-}
-
-.glass-dark {
-  background: rgba(17, 24, 39, 0.7);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-/* Marquee Animation */
+/* Animations */
 @keyframes marquee {
   0% { transform: translateX(100%); }
   100% { transform: translateX(-100%); }
 }
 
+@keyframes shine {
+  0% { transform: translateX(-150%) skewX(-30deg); }
+  100% { transform: translateX(250%) skewX(-30deg); }
+}
+
+.animate-shine {
+  animation: shine 1.5s infinite;
+}
+
 .animate-marquee {
-  animation: marquee 20s linear infinite;
+  animation: marquee 25s linear infinite;
   display: inline-block;
   padding-left: 100%;
 }
 
-/* Custom scrollbar for modals */
-.custom-scrollbar::-webkit-scrollbar {
+/* Custom Scrollbar */
+::-webkit-scrollbar {
   width: 5px;
+  height: 5px;
 }
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(0,0,0,0.2);
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3); 
   border-radius: 10px;
 }
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5); 
+}
 
-/* Lamp glow effect */
-.lamp-glow-blue {
-  box-shadow: 0 0 10px #3b82f6, 0 0 20px #3b82f6;
+/* Theme Utilities - Ensuring Text is ALWAYS visible */
+.bg-black h1, .bg-black h2, .bg-black h3, .bg-black h4, .bg-black h5, .bg-black h6, 
+.bg-black p, .bg-black span, .bg-black label, .bg-black div, .bg-black td, .bg-black th,
+.bg-\[\#002b4a\] h1, .bg-\[\#002b4a\] p, .bg-\[\#002b4a\] span,
+.bg-\[\#004d40\] h1, .bg-\[\#004d40\] p, .bg-\[\#004d40\] span,
+.bg-\[\#1b3022\] h1, .bg-\[\#1b3022\] p, .bg-\[\#1b3022\] span,
+.bg-\[\#0a001a\] h1, .bg-\[\#0a001a\] p, .bg-\[\#0a001a\] span,
+.bg-\[\#121212\] h1, .bg-\[\#121212\] p, .bg-\[\#121212\] span {
+  color: #ffffff !important;
+}
+
+/* Royal Theme Gold Text */
+.bg-\[\#121212\] h1, .bg-\[\#121212\] h2, .bg-\[\#121212\] .text-blue-500, .bg-\[\#121212\] .text-blue-600 {
+  color: #d4af37 !important;
+}
+
+/* Light Theme Specific Overrides */
+.bg-gray-100 h1, .bg-gray-100 h2, .bg-gray-100 h3, .bg-gray-100 h4, .bg-gray-100 p, .bg-gray-100 span, .bg-gray-100 label,
+.bg-\[\#f5f1ed\] h1, .bg-\[\#f5f1ed\] h2, .bg-\[\#f5f1ed\] h3, .bg-\[\#f5f1ed\] p, .bg-\[\#f5f1ed\] span, .bg-\[\#f5f1ed\] label {
+  color: #111827 !important;
+  text-shadow: none;
+}
+
+/* Input Styles for various themes */
+.bg-gray-100 input, .bg-gray-100 select, .bg-gray-100 textarea,
+.bg-\[\#f5f1ed\] input, .bg-\[\#f5f1ed\] select, .bg-\[\#f5f1ed\] textarea {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border: 1px solid #d1d5db !important;
+}
+
+.bg-black input, .bg-black select, .bg-black textarea,
+.bg-\[\#004d40\] input, .bg-\[\#1b3022\] input, .bg-\[\#0a001a\] input, .bg-\[\#121212\] input {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+}
+
+.bg-\[\#121212\] input {
+  border-color: rgba(212, 175, 55, 0.3) !important;
+}
+
+/* Table overrides for readability */
+.bg-\[\#f5f1ed\] tr td {
+    background-color: rgba(0,0,0,0.02);
+}
+.bg-\[\#121212\] tr td {
+    background-color: rgba(212, 175, 55, 0.05);
 }
