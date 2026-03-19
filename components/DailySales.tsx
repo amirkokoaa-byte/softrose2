@@ -10,9 +10,10 @@ interface Props {
     user: User;
     markets: string[];
     theme: string;
+    products: {id: string, name: string, category: string}[];
 }
 
-const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
+const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
     const [selectedMarket, setSelectedMarket] = useState('');
     const [salesItems, setSalesItems] = useState<ProductItem[]>([]);
     const [userTarget, setUserTarget] = useState<UserTarget | null>(null);
@@ -22,25 +23,13 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
     const [tempName, setTempName] = useState('');
 
     useEffect(() => {
-        const initialItems: ProductItem[] = [];
-        const categories = [
-            { name: 'مناديل السحب (Facial)', items: PRODUCTS_FACIAL, key: 'Facial' },
-            { name: 'مناديل المطبخ (Kitchen)', items: PRODUCTS_KITCHEN, key: 'Kitchen' },
-            { name: 'مناديل تواليت (Toilet)', items: PRODUCTS_TOILET, key: 'Toilet' },
-            { name: 'مناديل دولفن (Dolphin)', items: PRODUCTS_DOLPHIN, key: 'Dolphin' },
-        ];
-        
-        categories.forEach(cat => {
-            cat.items.forEach(name => {
-                initialItems.push({ 
-                    id: name + "_base_" + Math.random().toString(36).substr(2, 9), 
-                    name, 
-                    price: 0, 
-                    qty: 0, 
-                    category: cat.key 
-                });
-            });
-        });
+        const initialItems: ProductItem[] = products.map(p => ({
+            id: p.id,
+            name: p.name,
+            price: 0,
+            qty: 0,
+            category: p.category
+        }));
         setSalesItems(initialItems);
 
         if (user.key) {
@@ -79,9 +68,13 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
         setSalesItems(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
     };
 
-    const deleteItem = (id: string) => {
+    const deleteItem = async (id: string) => {
         if (confirm("هل تريد حذف هذا الصنف من القائمة الحالية؟")) {
-            setSalesItems(prev => prev.filter(i => i.id !== id));
+            if (user.role === 'admin') {
+                await remove(ref(db, `products/${id}`));
+            } else {
+                setSalesItems(prev => prev.filter(i => i.id !== id));
+            }
         }
     };
 
@@ -90,36 +83,18 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
         setTempName(currentName);
     };
 
-    const saveName = (id: string) => {
-        const containsArabic = /[\u0600-\u06FF]/.test(tempName);
-        if (containsArabic) {
-            alert("يرجى كتابة اسم الصنف باللغة الإنجليزية فقط");
-            return;
-        }
-        setSalesItems(prev => prev.map(i => i.id === id ? { ...i, name: tempName } : i));
+    const saveName = async (id: string) => {
+        if (!tempName.trim()) return;
+        // Update in Firebase
+        await update(ref(db, `products/${id}`), { name: tempName });
         setEditingItemId(null);
     };
 
-    const addCustomItem = (category: string) => {
-        const newItemName = prompt("ادخل اسم الصنف الجديد (English Only):");
-        if (newItemName) {
-            const containsArabic = /[\u0600-\u06FF]/.test(newItemName);
-            if (containsArabic) {
-                alert("يرجى كتابة اسم الصنف باللغة الإنجليزية فقط");
-                return;
-            }
-
-            setSalesItems(prev => [
-                ...prev,
-                {
-                    id: newItemName + "_" + Date.now(),
-                    name: newItemName,
-                    price: 0,
-                    qty: 0,
-                    category,
-                    isCustom: true
-                }
-            ]);
+    const addCustomItem = async (category: string) => {
+        const newItemName = prompt("ادخل اسم الصنف الجديد:");
+        if (newItemName && newItemName.trim()) {
+            const newRef = push(ref(db, 'products'));
+            await set(newRef, { name: newItemName.trim(), category });
         }
     };
 
@@ -242,7 +217,7 @@ const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
                                             <button onClick={() => setEditingItemId(null)} className="text-red-400 p-1 hover:bg-red-400/10 rounded"><X size={14}/></button>
                                         </div>
                                     ) : (
-                                        <span className="text-[11px] truncate block" title={item.name}>{item.name}</span>
+                                        <span className="text-[11px] whitespace-normal break-words block" title={item.name}>{item.name}</span>
                                     )}
                                 </div>
                                 <div className="col-span-2">

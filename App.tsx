@@ -37,6 +37,7 @@ const App: React.FC = () => {
   const [theme, setTheme] = useState<'dark'>('dark');
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [markets, setMarkets] = useState<string[]>([]);
+  const [products, setProducts] = useState<{id: string, name: string, category: string}[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [welcomeToast, setWelcomeToast] = useState<string | null>(null);
@@ -49,10 +50,43 @@ const App: React.FC = () => {
   useEffect(() => {
     const settingsRef = ref(db, 'settings/app');
     const marketsRef = ref(db, 'settings/markets');
+    const productsRef = ref(db, 'products');
     const connectedRef = ref(db, ".info/connected");
 
     onValue(settingsRef, (snapshot) => {
       if (snapshot.exists()) setSettings({...DEFAULT_SETTINGS, ...snapshot.val()});
+    });
+
+    onValue(productsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        const prods = Object.keys(data).map(key => ({
+          id: key,
+          ...data[key]
+        }));
+        setProducts(prods);
+      } else {
+        // Initialize from constants if empty
+        import('./constants').then(constants => {
+          const initialProducts: any[] = [];
+          const addCat = (items: string[], cat: string) => {
+            items.forEach(name => {
+              const id = "prod_" + Math.random().toString(36).substr(2, 9);
+              initialProducts.push({ id, name, category: cat });
+            });
+          };
+          addCat(constants.PRODUCTS_FACIAL, 'Facial');
+          addCat(constants.PRODUCTS_KITCHEN, 'Kitchen');
+          addCat(constants.PRODUCTS_TOILET, 'Toilet');
+          addCat(constants.PRODUCTS_DOLPHIN, 'Dolphin');
+          
+          const updates: any = {};
+          initialProducts.forEach(p => {
+            updates[p.id] = { name: p.name, category: p.category };
+          });
+          update(ref(db, 'products'), updates);
+        });
+      }
     });
 
     onValue(marketsRef, (snapshot) => {
@@ -250,6 +284,12 @@ const App: React.FC = () => {
       )}
 
       <div className="flex flex-1 overflow-hidden relative">
+        {isSidebarOpen && (
+            <div 
+                className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm transition-opacity"
+                onClick={() => setIsSidebarOpen(false)}
+            />
+        )}
         <div className={`fixed md:relative top-0 bottom-0 right-0 z-50 h-full transition-transform duration-300 md:transform-none ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
             <Sidebar 
                 currentView={currentView} 
@@ -263,11 +303,11 @@ const App: React.FC = () => {
         
         <main className="flex-1 p-2 md:p-4 overflow-y-auto w-full">
             <div className={`p-4 md:p-6 min-h-full rounded-2xl shadow-xl bg-gray-900/60 border border-white/5 backdrop-blur-md`}>
-                {currentView === 'sales' && <DailySales user={user} markets={markets} theme={theme} />}
+                {currentView === 'sales' && <DailySales user={user} markets={markets} theme={theme} products={products} />}
                 {currentView === 'salesLog' && <SalesLog user={user} markets={markets} theme={theme} />}
-                {currentView === 'inventoryReg' && <InventoryRegistration user={user} markets={markets} theme={theme} />}
+                {currentView === 'inventoryReg' && <InventoryRegistration user={user} markets={markets} theme={theme} products={products} />}
                 {currentView === 'inventoryLog' && <InventoryLog user={user} markets={markets} theme={theme} />}
-                {currentView === 'competitorPrices' && <CompetitorPrices user={user} markets={markets} theme={theme} />}
+                {currentView === 'competitorPrices' && <CompetitorPrices user={user} markets={markets} theme={theme} products={products} />}
                 {currentView === 'competitorReports' && <CompetitorReports user={user} markets={markets} theme={theme} />}
                 {currentView === 'leaveBalance' && <LeaveBalanceComponent user={user} theme={theme} />}
                 {currentView === 'settings' && <Settings user={user} settings={settings} markets={markets} theme={theme} setTheme={setTheme as any} />}

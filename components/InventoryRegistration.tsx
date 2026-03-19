@@ -10,6 +10,7 @@ interface Props {
     user: User;
     markets: string[];
     theme: string;
+    products: {id: string, name: string, category: string}[];
 }
 
 interface InventoryItem {
@@ -20,67 +21,51 @@ interface InventoryItem {
     isCustom: boolean;
 }
 
-const InventoryRegistration: React.FC<Props> = ({ user, markets, theme }) => {
+const InventoryRegistration: React.FC<Props> = ({ user, markets, theme, products }) => {
     const [selectedMarket, setSelectedMarket] = useState('');
     const [items, setItems] = useState<InventoryItem[]>([]);
 
     const allCategories = [
-        { name: 'مناديل السحب (Facial)', items: PRODUCTS_FACIAL, key: 'Facial', allowAdd: true },
-        { name: 'مناديل المطبخ (Kitchen)', items: PRODUCTS_KITCHEN, key: 'Kitchen', allowAdd: true },
-        { name: 'مناديل تواليت (Toilet)', items: PRODUCTS_TOILET, key: 'Toilet', allowAdd: false },
-        { name: 'مناديل دولفن (Dolphin)', items: PRODUCTS_DOLPHIN, key: 'Dolphin', allowAdd: true },
+        { name: 'مناديل السحب (Facial)', key: 'Facial', allowAdd: true },
+        { name: 'مناديل المطبخ (Kitchen)', key: 'Kitchen', allowAdd: true },
+        { name: 'مناديل تواليت (Toilet)', key: 'Toilet', allowAdd: false },
+        { name: 'مناديل دولفن (Dolphin)', key: 'Dolphin', allowAdd: true },
     ];
 
     useEffect(() => {
-        const initItems: InventoryItem[] = [];
-        allCategories.forEach(cat => {
-            cat.items.forEach(prod => {
-                initItems.push({
-                    id: prod,
-                    name: prod,
-                    qty: 0,
-                    category: cat.key,
-                    isCustom: false
-                });
-            });
-        });
+        const initItems: InventoryItem[] = products.map(p => ({
+            id: p.id,
+            name: p.name,
+            qty: 0,
+            category: p.category,
+            isCustom: false
+        }));
         setItems(initItems);
-    }, []);
+    }, [products]);
 
     const updateItem = (id: string, field: 'qty' | 'name', value: any) => {
-        // إذا كان تعديل الاسم لصنف مخصص، نتحقق من اللغة
-        if (field === 'name') {
-            const containsArabic = /[\u0600-\u06FF]/.test(value);
-            if (containsArabic) {
-                alert("يرجى كتابة اسم الصنف باللغة الإنجليزية فقط");
-                return;
-            }
-        }
         setItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
     };
 
-    const handleAddCustomItem = (category: string) => {
-        const newItem: InventoryItem = {
-            id: `custom_${Date.now()}_${Math.random()}`,
-            name: '',
-            qty: 0,
-            category,
-            isCustom: true
-        };
-        setItems(prev => [...prev, newItem]);
+    const handleAddCustomItem = async (category: string) => {
+        const newItemName = prompt("ادخل اسم الصنف الجديد:");
+        if (newItemName && newItemName.trim()) {
+            const newRef = push(ref(db, 'products'));
+            await set(newRef, { name: newItemName.trim(), category });
+        }
     };
 
-    const removeCustomItem = (id: string) => {
-        setItems(prev => prev.filter(i => i.id !== id));
+    const removeCustomItem = async (id: string) => {
+        if (user.role === 'admin') {
+            await remove(ref(db, `products/${id}`));
+        } else {
+            setItems(prev => prev.filter(i => i.id !== id));
+        }
     };
 
     const handleSave = async () => {
         if (!selectedMarket) return alert("اختر الماركت");
         
-        // التحقق من أن جميع الأصناف المخصصة مكتوبة بالإنجليزية
-        const arabicItems = items.filter(i => i.qty > 0 && /[\u0600-\u06FF]/.test(i.name));
-        if (arabicItems.length > 0) return alert("يرجى التأكد من كتابة أسماء الأصناف الجديدة بالإنجليزية فقط");
-
         const inventoryData = {
             market: selectedMarket,
             date: new Date().toLocaleDateString('ar-EG'),
@@ -122,9 +107,9 @@ const InventoryRegistration: React.FC<Props> = ({ user, markets, theme }) => {
                             <div key={item.id} className="flex justify-between items-center gap-2 p-2 border-b border-gray-500/10">
                                 <div className="flex-1">
                                     {item.isCustom ? (
-                                        <input type="text" value={item.name} onChange={e => updateItem(item.id, 'name', e.target.value)} className={`${inputClass} w-full text-sm`} placeholder="اسم الصنف (English Only)..." />
+                                        <input type="text" value={item.name} onChange={e => updateItem(item.id, 'name', e.target.value)} className={`${inputClass} w-full text-sm`} placeholder="اسم الصنف..." />
                                     ) : (
-                                        <span className="text-sm font-medium">{item.name}</span>
+                                        <span className="text-sm font-medium whitespace-normal break-words block">{item.name}</span>
                                     )}
                                 </div>
                                 <div className="flex items-center gap-2">

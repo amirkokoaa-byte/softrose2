@@ -10,9 +10,10 @@ interface Props {
     user: User;
     markets: string[];
     theme: string;
+    products: {id: string, name: string, category: string}[];
 }
 
-const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
+const CompetitorPrices: React.FC<Props> = ({ user, markets, theme, products }) => {
     const [selectedMarket, setSelectedMarket] = useState('');
     const [selectedCompany, setSelectedCompany] = useState('');
     const [items, setItems] = useState<{category: string, name: string, price: number, isCustom?: boolean}[]>([]);
@@ -29,7 +30,9 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
         };
 
         switch(selectedCompany) {
-            case 'Soft Rose': setItems(generateItems(PRODUCTS_FACIAL, PRODUCTS_KITCHEN, PRODUCTS_TOILET)); break;
+            case 'Soft Rose': 
+                setItems(products.map(p => ({ category: p.category, name: p.name, price: 0 }))); 
+                break;
             case 'Fine': setItems(generateItems(FINE_FACIAL, FINE_KITCHEN, FINE_TOILET)); break;
             case 'Zeina': setItems(generateItems(ZEINA_FACIAL, ZEINA_KITCHEN, ZEINA_TOILET)); break;
             case 'Papia Familia': setItems(generateItems(PAPIA_FACIAL, PAPIA_KITCHEN, PAPIA_TOILET)); break;
@@ -39,15 +42,9 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
     }, [selectedCompany]);
 
     const addCustomItem = (category: string) => {
-        const name = prompt("ادخل اسم الصنف المنافس (English Only):");
-        if (name) {
-            // التحقق من اللغة (منع العربية)
-            const containsArabic = /[\u0600-\u06FF]/.test(name);
-            if (containsArabic) {
-                alert("يرجى كتابة اسم الصنف باللغة الإنجليزية فقط");
-                return;
-            }
-            setItems(prev => [...prev, { category, name, price: 0, isCustom: true }]);
+        const name = prompt("ادخل اسم الصنف المنافس:");
+        if (name && name.trim()) {
+            setItems(prev => [...prev, { category, name: name.trim(), price: 0, isCustom: true }]);
         }
     };
 
@@ -105,7 +102,7 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme }) => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                             {items.filter(i => i.category === cat).map((item, idx) => (
                                 <div key={idx} className="flex items-center gap-2 bg-black/20 p-2 rounded-xl">
-                                    <span className="flex-1 text-xs text-white truncate font-bold">{item.name}</span>
+                                    <span className="flex-1 text-xs text-white whitespace-normal break-words font-bold">{item.name}</span>
                                     <input 
                                         type="number" 
                                         placeholder="السعر" 

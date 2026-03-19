@@ -136,9 +136,25 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, user, theme, co
                 )}
             </nav>
             
-            <div className="mt-auto text-[9px] px-4 pt-4 border-t border-white/10 opacity-30 font-bold uppercase tracking-widest flex justify-between items-center">
-                <span>Soft Rose System</span>
-                <span>v1.5.0</span>
+            <div className="mt-auto pt-4 border-t border-white/10 flex flex-col gap-3">
+                <div className="flex items-center gap-3 px-4 py-2 bg-white/5 rounded-xl border border-white/10">
+                    <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                        {user.name.charAt(0)}
+                    </div>
+                    <div className="flex flex-col overflow-hidden">
+                        <span className="text-sm font-bold text-white truncate">{user.name}</span>
+                        <span className="text-[10px] text-white/50">
+                            {user.role === 'admin' ? 'مسؤول' : 
+                             user.role === 'manager' ? 'مدير' :
+                             user.role === 'coordinator' ? 'منسق' :
+                             user.role === 'supervisor' ? 'مشرف' : 'موظف'}
+                        </span>
+                    </div>
+                </div>
+                <div className="text-[9px] px-4 opacity-30 font-bold uppercase tracking-widest flex justify-between items-center">
+                    <span>Soft Rose System</span>
+                    <span>v1.5.0</span>
+                </div>
             </div>
         </aside>
     );

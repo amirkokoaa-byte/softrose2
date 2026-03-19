@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { ref, set, push, onValue, remove, update } from "firebase/database";
+import { ref, set, push, onValue, remove, update, get } from "firebase/database";
 import { User, AppSettings, UserPermissions, AppNotification } from '../types';
 import { 
   Save, Trash2, UserPlus, Shield, Edit2, Plus, X, 
@@ -43,6 +43,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
     const [passModal, setPassModal] = useState<{key: string, name: string} | null>(null);
     const [permModal, setPermModal] = useState<User | null>(null);
     const [notifModal, setNotifModal] = useState<{username: string, name: string} | null>(null);
+    const [roleModal, setRoleModal] = useState<User | null>(null);
     const [newPass, setNewPass] = useState('');
     const [notifMsg, setNotifMsg] = useState('');
 
@@ -172,6 +173,57 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
         setPermModal(null);
     };
 
+    const handleUpdateRole = async () => {
+        if (!roleModal || !roleModal.key) return;
+        await update(ref(db, `users/${roleModal.key}`), { role: roleModal.role });
+        alert("تم تحديث المسمى الوظيفي بنجاح");
+        setRoleModal(null);
+    };
+
+    const handleExportData = async () => {
+        try {
+            const snapshot = await get(ref(db, '/'));
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `soft_rose_backup_${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } else {
+                alert('لا توجد بيانات لتصديرها');
+            }
+        } catch (error) {
+            console.error("Export error:", error);
+            alert('حدث خطأ أثناء تصدير البيانات');
+        }
+    };
+
+    const handleImportData = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const content = e.target?.result as string;
+                const data = JSON.parse(content);
+                if (confirm('تحذير: استيراد البيانات سيقوم باستبدال كافة البيانات الحالية. هل أنت متأكد؟')) {
+                    await set(ref(db, '/'), data);
+                    alert('تم استيراد البيانات بنجاح');
+                }
+            } catch (error) {
+                console.error("Import error:", error);
+                alert('حدث خطأ أثناء استيراد البيانات. تأكد من صحة الملف.');
+            }
+        };
+        reader.readAsText(file);
+    };
+
     const handleSendNotif = async () => {
         if (!notifModal || !notifMsg) return;
         const notification: AppNotification = {
@@ -203,6 +255,17 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 [key]: !currentPermissions[key]
             }
         });
+    };
+
+    const getRoleLabel = (role: string) => {
+        switch(role) {
+            case 'admin': return 'مسؤول';
+            case 'manager': return 'مدير';
+            case 'coordinator': return 'منسق';
+            case 'supervisor': return 'مشرف';
+            case 'user':
+            default: return 'موظف';
+        }
     };
 
     if (user.role !== 'admin') {
@@ -251,6 +314,32 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 </button>
             </div>
 
+            {/* إدارة البيانات */}
+            <div className={sectionClass}>
+                <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-green-600 border-b pb-3">
+                    <Save size={20} /> إدارة البيانات (نسخ احتياطي واستعادة)
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <button 
+                        onClick={handleExportData} 
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold shadow-lg transition transform active:scale-95"
+                    >
+                        تصدير كافة البيانات (Export)
+                    </button>
+                    <div className="relative">
+                        <input 
+                            type="file" 
+                            accept=".json" 
+                            onChange={handleImportData} 
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        />
+                        <button className="w-full bg-orange-600 hover:bg-orange-700 text-white py-3 rounded-xl font-bold shadow-lg transition transform active:scale-95 pointer-events-none">
+                            استيراد بيانات (Import)
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             {/* إدارة المستخدمين */}
             <div className={sectionClass}>
                 <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-purple-600 border-b pb-3">
@@ -267,6 +356,9 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                         <select className={inputClass} value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as any})}>
                             <option value="user">موظف (User)</option>
                             <option value="admin">مسؤول (Admin)</option>
+                            <option value="manager">مدير (Manager)</option>
+                            <option value="coordinator">منسق (Coordinator)</option>
+                            <option value="supervisor">مشرف (Supervisor)</option>
                         </select>
                     </div>
                     <button onClick={handleAddUser} className="mt-4 w-full bg-green-600 text-white font-bold py-2 rounded-lg hover:bg-green-700 transition shadow-lg">إضافة الموظف</button>
@@ -289,10 +381,11 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                                     <td className="p-3 opacity-70 text-white">{u.username}</td>
                                     <td className="p-3">
                                         <span className={`px-2 py-1 rounded text-[10px] font-bold ${u.role === 'admin' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                                            {u.role === 'admin' ? 'مسؤول' : 'موظف'}
+                                            {getRoleLabel(u.role)}
                                         </span>
                                     </td>
                                     <td className="p-3 flex justify-center gap-1 md:gap-2">
+                                        <button onClick={() => setRoleModal(u)} className="p-2 text-purple-400 hover:bg-purple-400/10 rounded" title="تعديل المسمى الوظيفي"><Edit2 size={16}/></button>
                                         <button onClick={() => setNotifModal({username: u.username, name: u.name})} className="p-2 text-green-400 hover:bg-green-400/10 rounded" title="إرسال رسالة تنبيه"><Send size={16}/></button>
                                         <button onClick={() => setPermModal(u)} className="p-2 text-blue-400 hover:bg-blue-400/10 rounded permission-btn" title="تعديل صلاحيات الأقسام"><Shield size={16}/></button>
                                         <button onClick={() => setPassModal({key: u.key!, name: u.name})} className="p-2 text-orange-400 hover:bg-orange-400/10 rounded" title="تغيير كلمة المرور"><Key size={16}/></button>
@@ -306,6 +399,29 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
             </div>
 
             {/* بقية النوافذ المنبثقة (كلمة السر، التنبيهات، الصلاحيات) */}
+            {roleModal && (
+                <div className="fixed inset-0 z-[110] bg-black/80 flex items-center justify-center p-4">
+                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-sm">
+                        <h4 className="font-bold mb-4 text-white">تعديل المسمى الوظيفي: {roleModal.name}</h4>
+                        <select 
+                            className={inputClass} 
+                            value={roleModal.role} 
+                            onChange={e => setRoleModal({...roleModal, role: e.target.value})}
+                        >
+                            <option value="user">موظف (User)</option>
+                            <option value="admin">مسؤول (Admin)</option>
+                            <option value="manager">مدير (Manager)</option>
+                            <option value="coordinator">منسق (Coordinator)</option>
+                            <option value="supervisor">مشرف (Supervisor)</option>
+                        </select>
+                        <div className="flex gap-2 mt-4">
+                            <button onClick={handleUpdateRole} className="flex-1 bg-purple-600 text-white py-2 rounded-lg font-bold">تحديث</button>
+                            <button onClick={() => setRoleModal(null)} className="flex-1 bg-white/5 text-white py-2 rounded-lg">إلغاء</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {passModal && (
                 <div className="fixed inset-0 z-[110] bg-black/80 flex items-center justify-center p-4">
                     <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-sm">

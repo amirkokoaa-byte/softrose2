@@ -50,7 +50,7 @@ export interface UserPermissions {
 export interface User {
     key?: string;
     username: string;
-    role: 'admin' | 'user';
+    role: 'admin' | 'user' | 'merchandiser' | 'supervisor' | string;
     name: string;
     code?: string;
     phone?: string;
