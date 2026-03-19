@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ref, push, onValue, set, get, update } from "firebase/database";
+import { ref, push, onValue, set, get, update, remove } from "firebase/database";
 import { db } from '../firebase';
 import { User, ProductItem, UserTarget } from '../types';
 import { PRODUCTS_FACIAL, PRODUCTS_KITCHEN, PRODUCTS_TOILET, PRODUCTS_DOLPHIN } from '../constants';
@@ -23,15 +23,24 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
     const [tempName, setTempName] = useState('');
 
     useEffect(() => {
-        const initialItems: ProductItem[] = products.map(p => ({
-            id: p.id,
-            name: p.name,
-            price: 0,
-            qty: 0,
-            category: p.category
-        }));
-        setSalesItems(initialItems);
+        setSalesItems(prev => {
+            return products.map(p => {
+                const existing = prev.find(i => i.id === p.id);
+                if (existing) {
+                    return { ...existing, name: p.name, category: p.category };
+                }
+                return {
+                    id: p.id,
+                    name: p.name,
+                    price: 0,
+                    qty: 0,
+                    category: p.category
+                };
+            });
+        });
+    }, [products]);
 
+    useEffect(() => {
         if (user.key) {
             const targetRef = ref(db, `targets/${user.key}`);
             onValue(targetRef, (snapshot) => {
@@ -72,6 +81,7 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
         if (confirm("هل تريد حذف هذا الصنف من القائمة الحالية؟")) {
             if (user.role === 'admin') {
                 await remove(ref(db, `products/${id}`));
+                setSalesItems(prev => prev.filter(i => i.id !== id));
             } else {
                 setSalesItems(prev => prev.filter(i => i.id !== id));
             }
@@ -87,6 +97,7 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
         if (!tempName.trim()) return;
         // Update in Firebase
         await update(ref(db, `products/${id}`), { name: tempName });
+        setSalesItems(prev => prev.map(i => i.id === id ? { ...i, name: tempName } : i));
         setEditingItemId(null);
     };
 
@@ -147,25 +158,38 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
                     </div>
 
                     {userTarget && (
-                        <div className="bg-purple-600/20 border border-purple-500/50 p-4 rounded-3xl flex items-center gap-4 shadow-lg min-w-[280px]">
-                            <div className="bg-purple-600 p-2 rounded-2xl text-white">
-                                <Target size={24} />
-                            </div>
-                            <div className="flex-1">
-                                <div className="text-[10px] font-black opacity-60 text-white uppercase tracking-widest">متابعة التارجت ( {userTarget.finalTarget.toLocaleString()} ج.م )</div>
-                                <div className="flex justify-between items-end">
-                                    <div className="text-lg font-black text-purple-400">
-                                        المتبقي: {remaining.toLocaleString()}
+                        <>
+                            <div className="bg-purple-600/20 border border-purple-500/50 p-4 rounded-3xl flex items-center gap-4 shadow-lg min-w-[280px]">
+                                <div className="bg-purple-600 p-2 rounded-2xl text-white">
+                                    <Target size={24} />
+                                </div>
+                                <div className="flex-1">
+                                    <div className="text-[10px] font-black opacity-60 text-white uppercase tracking-widest">التارجت الشهري</div>
+                                    <div className="flex justify-between items-end">
+                                        <div className="text-2xl font-black text-purple-400">
+                                            {userTarget.finalTarget.toLocaleString()} <span className="text-xs">ج.م</span>
+                                        </div>
+                                        <div className="text-sm font-bold text-green-400">
+                                            {progressPercent}%
+                                        </div>
                                     </div>
-                                    <div className="text-sm font-bold text-green-400">
-                                        {progressPercent}%
+                                    <div className="w-full bg-black/40 h-1.5 rounded-full mt-1 overflow-hidden">
+                                        <div className="bg-green-500 h-full transition-all duration-1000" style={{ width: `${progressPercent}%` }}></div>
                                     </div>
                                 </div>
-                                <div className="w-full bg-black/40 h-1.5 rounded-full mt-1 overflow-hidden">
-                                    <div className="bg-green-500 h-full transition-all duration-1000" style={{ width: `${progressPercent}%` }}></div>
+                            </div>
+                            <div className="bg-orange-600/20 border border-orange-500/50 p-4 rounded-3xl flex items-center gap-4 shadow-lg min-w-[200px]">
+                                <div className="bg-orange-600 p-2 rounded-2xl text-white">
+                                    <TrendingUp size={24} />
+                                </div>
+                                <div>
+                                    <div className="text-[10px] font-black opacity-60 text-white uppercase tracking-widest">المتبقي من التارجت</div>
+                                    <div className="text-2xl font-black text-orange-400">
+                                        {remaining.toLocaleString()} <span className="text-xs">ج.م</span>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        </>
                     )}
                 </div>
             </div>

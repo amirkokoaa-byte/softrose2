@@ -293,8 +293,8 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
 
             {/* مودال التاريخ والسجل */}
             {showHistoryDetailsModal && historyUserView && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-                    <div className="w-full max-w-2xl p-6 rounded-3xl border border-white/10 bg-gray-900 text-white flex flex-col max-h-[90vh] shadow-2xl animate-in zoom-in-95">
+                <div className="fixed top-0 left-0 w-full h-full z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto my-auto">
+                    <div className="w-full max-w-2xl p-6 rounded-3xl border border-white/10 bg-gray-900 text-white flex flex-col max-h-[90vh] shadow-2xl animate-in zoom-in-95 my-auto">
                         <div className="flex justify-between items-center mb-6">
                             <div className="flex items-center gap-2">
                                 <UserIcon className="text-blue-500" size={20}/>
@@ -348,8 +348,8 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
 
             {/* مودال تصدير إكسيل */}
             {showExportModal && (
-                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
-                    <div className="bg-gray-900 border border-white/10 w-full max-w-md rounded-3xl p-6 shadow-2xl animate-in zoom-in-95">
+                <div className="fixed top-0 left-0 w-full h-full z-[9999] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md overflow-y-auto my-auto">
+                    <div className="bg-gray-900 border border-white/10 w-full max-w-md rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 my-auto">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-xl font-bold text-white flex items-center gap-2"><FileSpreadsheet className="text-green-500"/> تصدير التقارير</h3>
                             <button onClick={() => setShowExportModal(false)} className="text-white/50 hover:text-white"><X size={20}/></button>
@@ -404,8 +404,8 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
 
             {/* مودال تعديل الرصيد (Admin Only) */}
             {showEditBalanceModal && (
-                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
-                    <div className="bg-gray-900 border border-white/10 w-full max-w-md rounded-3xl p-6 shadow-2xl animate-in zoom-in-95">
+                <div className="fixed top-0 left-0 w-full h-full z-[9999] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md overflow-y-auto my-auto">
+                    <div className="bg-gray-900 border border-white/10 w-full max-w-md rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 my-auto">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-xl font-bold text-white flex items-center gap-2"><Edit className="text-blue-500"/> تعديل رصيد: {showEditBalanceModal.employeeName}</h3>
                             <button onClick={() => setShowEditBalanceModal(null)} className="text-white/50 hover:text-white"><X size={20}/></button>
@@ -435,8 +435,8 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
 
             {/* مودال الإضافة (للآدمن فقط) */}
             {showAddLeaveModal && user.role === 'admin' && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-                    <div className="w-full max-w-md p-6 rounded-3xl border border-white/10 bg-gray-900 text-white shadow-2xl animate-in zoom-in-95">
+                <div className="fixed top-0 left-0 w-full h-full z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto my-auto">
+                    <div className="w-full max-w-md p-6 rounded-3xl border border-white/10 bg-gray-900 text-white shadow-2xl animate-in zoom-in-95 my-auto">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-xl font-bold text-white">تسجيل إجازة / غياب</h3>
                             <button onClick={() => setShowAddLeaveModal(false)} className="text-white/50 hover:text-white"><X size={20}/></button>

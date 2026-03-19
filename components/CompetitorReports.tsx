@@ -192,8 +192,8 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
 
             {/* مودال مقارنة الأسعار */}
             {showComparisonModal && (
-                <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[400] p-4 backdrop-blur-md">
-                    <div className="w-full max-w-4xl bg-gray-900 border border-white/20 rounded-3xl p-6 flex flex-col max-h-[95vh] shadow-2xl animate-in zoom-in-95">
+                <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black/90 flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto my-auto">
+                    <div className="w-full max-w-4xl bg-gray-900 border border-white/20 rounded-3xl p-6 flex flex-col max-h-[95vh] shadow-2xl animate-in zoom-in-95 my-auto">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="font-bold text-xl text-white flex items-center gap-2"><Scale className="text-indigo-400"/> مقارنة أحدث الأسعار المسجلة</h3>
                             <button onClick={() => setShowComparisonModal(false)} className="text-white/50 hover:text-white"><X size={20}/></button>
@@ -260,8 +260,8 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
             )}
 
             {editingReport && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[500] p-4 backdrop-blur-md">
-                    <div className="w-full max-w-2xl bg-gray-900 border border-white/10 rounded-3xl p-6 flex flex-col max-h-[85vh]">
+                <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black/80 flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto my-auto">
+                    <div className="w-full max-w-2xl bg-gray-900 border border-white/10 rounded-3xl p-6 flex flex-col max-h-[85vh] my-auto">
                         <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
                             <h3 className="font-bold text-xl text-blue-400 flex items-center gap-2"><Edit size={20}/> تعديل تقرير المنافس</h3>
                             <button onClick={() => setEditingReport(null)} className="p-2 hover:bg-white/10 rounded-full text-white"><X/></button>

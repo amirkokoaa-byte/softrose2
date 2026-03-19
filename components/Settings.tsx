@@ -180,6 +180,18 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
         setRoleModal(null);
     };
 
+    const handleDeleteMarket = async (key: string) => {
+        if (confirm("هل أنت متأكد من حذف هذا الماركت؟")) {
+            await remove(ref(db, `settings/markets/${key}`));
+        }
+    };
+
+    const handleDeleteCompany = async (key: string) => {
+        if (confirm("هل أنت متأكد من حذف هذه الشركة؟")) {
+            await remove(ref(db, `settings/companies/${key}`));
+        }
+    };
+
     const handleExportData = async () => {
         try {
             const snapshot = await get(ref(db, '/'));
@@ -340,6 +352,43 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 </div>
             </div>
 
+            {/* إدارة الشركات والأسواق */}
+            <div className={sectionClass}>
+                <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-yellow-500 border-b pb-3">
+                    <Building2 size={20} /> إدارة الشركات والأسواق
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <h4 className="font-bold mb-4 text-white flex items-center gap-2"><Building2 size={16}/> الشركات المسجلة</h4>
+                        <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                            {companyList.map(c => (
+                                <div key={c.key} className="flex justify-between items-center bg-gray-700/50 p-3 rounded-xl border border-gray-600">
+                                    <span className="font-bold text-white">{c.name}</span>
+                                    <button onClick={() => handleDeleteCompany(c.key)} className="text-red-400 hover:bg-red-400/10 p-2 rounded-lg transition">
+                                        <Trash2 size={16}/>
+                                    </button>
+                                </div>
+                            ))}
+                            {companyList.length === 0 && <div className="text-center opacity-50 text-sm py-4">لا توجد شركات مسجلة</div>}
+                        </div>
+                    </div>
+                    <div>
+                        <h4 className="font-bold mb-4 text-white flex items-center gap-2"><MapPin size={16}/> الأسواق المسجلة</h4>
+                        <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                            {marketList.map(m => (
+                                <div key={m.key} className="flex justify-between items-center bg-gray-700/50 p-3 rounded-xl border border-gray-600">
+                                    <span className="font-bold text-white">{m.name}</span>
+                                    <button onClick={() => handleDeleteMarket(m.key)} className="text-red-400 hover:bg-red-400/10 p-2 rounded-lg transition">
+                                        <Trash2 size={16}/>
+                                    </button>
+                                </div>
+                            ))}
+                            {marketList.length === 0 && <div className="text-center opacity-50 text-sm py-4">لا توجد أسواق مسجلة</div>}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             {/* إدارة المستخدمين */}
             <div className={sectionClass}>
                 <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-purple-600 border-b pb-3">
@@ -400,8 +449,8 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
 
             {/* بقية النوافذ المنبثقة (كلمة السر، التنبيهات، الصلاحيات) */}
             {roleModal && (
-                <div className="fixed inset-0 z-[110] bg-black/80 flex items-center justify-center p-4">
-                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-sm">
+                <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black/80 flex items-center justify-center p-4 overflow-y-auto">
+                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-sm my-auto">
                         <h4 className="font-bold mb-4 text-white">تعديل المسمى الوظيفي: {roleModal.name}</h4>
                         <select 
                             className={inputClass} 
@@ -423,8 +472,8 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
             )}
 
             {passModal && (
-                <div className="fixed inset-0 z-[110] bg-black/80 flex items-center justify-center p-4">
-                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-sm">
+                <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black/80 flex items-center justify-center p-4 overflow-y-auto">
+                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-sm my-auto">
                         <h4 className="font-bold mb-4 text-white">تغيير كلمة مرور: {passModal.name}</h4>
                         <input 
                             type="password" 
@@ -442,8 +491,8 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
             )}
 
             {permModal && (
-                <div className="fixed inset-0 z-[110] bg-black/80 flex items-center justify-center p-4">
-                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-lg">
+                <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black/80 flex items-center justify-center p-4 overflow-y-auto">
+                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-lg my-auto">
                         <h4 className="font-bold mb-6 text-white border-b pb-2 flex items-center gap-2">
                             <Shield className="text-blue-500" size={18}/> تعديل صلاحيات: {permModal.name}
                         </h4>
@@ -475,8 +524,8 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
             )}
 
             {notifModal && (
-                <div className="fixed inset-0 z-[110] bg-black/80 flex items-center justify-center p-4">
-                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-sm">
+                <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black/80 flex items-center justify-center p-4 overflow-y-auto">
+                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-sm my-auto">
                         <h4 className="font-bold mb-4 text-white">إرسال رسالة تنبيه إلى: {notifModal.name}</h4>
                         <textarea 
                             className={`${inputClass} min-h-[100px] mb-4`}

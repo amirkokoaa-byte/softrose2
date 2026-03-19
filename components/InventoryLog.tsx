@@ -90,8 +90,8 @@ const InventoryLog: React.FC<Props> = ({ user, markets, theme }) => {
             </div>
 
             {editingLog && (
-                <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4 backdrop-blur-xl">
-                    <div className="w-full max-w-xl bg-gray-900 border border-white/10 rounded-3xl p-6 flex flex-col max-h-[85vh]">
+                <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black/90 flex items-center justify-center p-4 backdrop-blur-xl overflow-y-auto my-auto">
+                    <div className="w-full max-w-xl bg-gray-900 border border-white/10 rounded-3xl p-6 flex flex-col max-h-[85vh] my-auto">
                         <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
                             <h3 className="font-bold text-xl text-blue-400">تعديل المخزون</h3>
                             <button onClick={() => setEditingLog(null)} className="p-2 hover:bg-white/10 rounded-full text-white"><X/></button>

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ref, push, set } from "firebase/database";
+import { ref, push, set, remove } from "firebase/database";
 import { db } from '../firebase';
 import { User } from '../types';
 import { PRODUCTS_FACIAL, PRODUCTS_KITCHEN, PRODUCTS_TOILET, PRODUCTS_DOLPHIN } from '../constants';
@@ -33,14 +33,21 @@ const InventoryRegistration: React.FC<Props> = ({ user, markets, theme, products
     ];
 
     useEffect(() => {
-        const initItems: InventoryItem[] = products.map(p => ({
-            id: p.id,
-            name: p.name,
-            qty: 0,
-            category: p.category,
-            isCustom: false
-        }));
-        setItems(initItems);
+        setItems(prev => {
+            return products.map(p => {
+                const existing = prev.find(i => i.id === p.id);
+                if (existing) {
+                    return { ...existing, name: p.name, category: p.category };
+                }
+                return {
+                    id: p.id,
+                    name: p.name,
+                    qty: 0,
+                    category: p.category,
+                    isCustom: false
+                };
+            });
+        });
     }, [products]);
 
     const updateItem = (id: string, field: 'qty' | 'name', value: any) => {
@@ -58,6 +65,7 @@ const InventoryRegistration: React.FC<Props> = ({ user, markets, theme, products
     const removeCustomItem = async (id: string) => {
         if (user.role === 'admin') {
             await remove(ref(db, `products/${id}`));
+            setItems(prev => prev.filter(i => i.id !== id));
         } else {
             setItems(prev => prev.filter(i => i.id !== id));
         }

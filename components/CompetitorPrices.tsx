@@ -18,6 +18,8 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme, products }) =
     const [selectedCompany, setSelectedCompany] = useState('');
     const [items, setItems] = useState<{category: string, name: string, price: number, isCustom?: boolean}[]>([]);
 
+    const prevCompanyRef = React.useRef('');
+
     useEffect(() => {
         if (!selectedCompany) return;
         
@@ -29,17 +31,29 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme, products }) =
             ];
         };
 
-        switch(selectedCompany) {
-            case 'Soft Rose': 
-                setItems(products.map(p => ({ category: p.category, name: p.name, price: 0 }))); 
-                break;
-            case 'Fine': setItems(generateItems(FINE_FACIAL, FINE_KITCHEN, FINE_TOILET)); break;
-            case 'Zeina': setItems(generateItems(ZEINA_FACIAL, ZEINA_KITCHEN, ZEINA_TOILET)); break;
-            case 'Papia Familia': setItems(generateItems(PAPIA_FACIAL, PAPIA_KITCHEN, PAPIA_TOILET)); break;
-            case 'White': setItems(generateItems(WHITE_FACIAL, WHITE_KITCHEN, WHITE_TOILET)); break;
-            default: setItems([]); break;
-        }
-    }, [selectedCompany]);
+        setItems(prev => {
+            const companyChanged = selectedCompany !== prevCompanyRef.current;
+            if (companyChanged) {
+                prevCompanyRef.current = selectedCompany;
+                switch(selectedCompany) {
+                    case 'Soft Rose': 
+                        return products.map(p => ({ category: p.category, name: p.name, price: 0 }));
+                    case 'Fine': return generateItems(FINE_FACIAL, FINE_KITCHEN, FINE_TOILET);
+                    case 'Zeina': return generateItems(ZEINA_FACIAL, ZEINA_KITCHEN, ZEINA_TOILET);
+                    case 'Papia Familia': return generateItems(PAPIA_FACIAL, PAPIA_KITCHEN, PAPIA_TOILET);
+                    case 'White': return generateItems(WHITE_FACIAL, WHITE_KITCHEN, WHITE_TOILET);
+                    default: return [];
+                }
+            } else if (selectedCompany === 'Soft Rose') {
+                // Only products changed, update Soft Rose items without losing prices
+                return products.map(p => {
+                    const existing = prev.find(i => i.name === p.name && i.category === p.category);
+                    return existing ? existing : { category: p.category, name: p.name, price: 0 };
+                });
+            }
+            return prev;
+        });
+    }, [selectedCompany, products]);
 
     const addCustomItem = (category: string) => {
         const name = prompt("ادخل اسم الصنف المنافس:");

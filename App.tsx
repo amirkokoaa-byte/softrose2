@@ -247,8 +247,8 @@ const App: React.FC = () => {
 
       {/* نافذة تفاصيل الإشعار */}
       {selectedNotif && (
-        <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-white/20 w-full max-w-md rounded-3xl p-6 shadow-2xl animate-in zoom-in-95">
+        <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto my-auto">
+          <div className="bg-gray-900 border border-white/20 w-full max-w-md rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 my-auto">
             <div className="flex justify-between items-center mb-6">
               <div className="flex items-center gap-2">
                 <Bell className="text-blue-500" size={20} />
@@ -302,7 +302,7 @@ const App: React.FC = () => {
         </div>
         
         <main className="flex-1 p-2 md:p-4 overflow-y-auto w-full">
-            <div className={`p-4 md:p-6 min-h-full rounded-2xl shadow-xl bg-gray-900/60 border border-white/5 backdrop-blur-md`}>
+            <div className={`p-4 md:p-6 min-h-full rounded-2xl shadow-xl bg-gray-900/60 border border-white/5`}>
                 {currentView === 'sales' && <DailySales user={user} markets={markets} theme={theme} products={products} />}
                 {currentView === 'salesLog' && <SalesLog user={user} markets={markets} theme={theme} />}
                 {currentView === 'inventoryReg' && <InventoryRegistration user={user} markets={markets} theme={theme} products={products} />}
