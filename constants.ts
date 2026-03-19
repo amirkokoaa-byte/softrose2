@@ -19,6 +19,11 @@ export const COMPANIES = [
 ];
 
 export const PRODUCTS_FACIAL = [
+    "Mazzoka 500 (31 * 1)",
+    "Soft 500 Suave (31 * 1)",
+    "Mazzoka 500 (3*1 )",
+    "Soft 400 ( 6*1 )",
+    "Easy Soft (6*1 )",
     "Soft 500 singel",
     "Soft 600 singel",
     "Soft 400 3*1",
@@ -57,7 +62,7 @@ export const PRODUCTS_DOLPHIN = [
     "Dolphin 24 Toilet Rolls"
 ];
 
-// --- FINE PRODUCTS FROM IMAGE ---
+// --- FINE PRODUCTS ---
 export const FINE_FACIAL = [
     "550 singel fluffy",
     "550 Singel Prestige",
@@ -97,7 +102,7 @@ export const FINE_TOILET = [
     "XXL"
 ];
 
-// --- ZEINA PRODUCTS FROM IMAGE ---
+// --- ZEINA PRODUCTS ---
 export const ZEINA_FACIAL = [
     "550 Single classic",
     "550 Single Trio",
@@ -135,7 +140,7 @@ export const ZEINA_TOILET = [
     "10 + 2 Toilet"
 ];
 
-// --- PAPIA & FAMILIA PRODUCTS FROM IMAGE ---
+// --- PAPIA & FAMILIA ---
 export const PAPIA_FACIAL = [
     "550 papia Single",
     "550 papia (3*1) 2ply",
@@ -176,7 +181,7 @@ export const PAPIA_TOILET = [
     "2 Toilet GoodCare"
 ];
 
-// --- WHITE PRODUCTS FROM IMAGE ---
+// --- WHITE PRODUCTS ---
 export const WHITE_FACIAL = [
     "550 single",
     "550 (3*1) L",

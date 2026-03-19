@@ -6,7 +6,7 @@ import { User, AppSettings, UserPermissions, AppNotification } from '../types';
 import { 
   Save, Trash2, UserPlus, Shield, Edit2, Plus, X, 
   Settings as SettingsIcon, Users, MapPin, Building2, 
-  ToggleLeft, ToggleRight, Key, Eye, EyeOff, Send
+  ToggleLeft, ToggleRight, Key, Send
 } from 'lucide-react';
 
 interface Props {
@@ -101,8 +101,26 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
 
     const handleAddUser = async () => {
         if (!newUser.username || !newUser.password || !newUser.name) return alert("اكمل بيانات المستخدم");
-        await push(ref(db, 'users'), newUser);
-        alert("تمت إضافة المستخدم بنجاح");
+        
+        // إضافة المستخدم وحفظ المفتاح
+        const userRef = push(ref(db, 'users'));
+        const userKey = userRef.key;
+        await set(userRef, newUser);
+
+        // تهيئة رصيد الإجازات تلقائياً للمستخدم الجديد
+        if (userKey) {
+            await set(ref(db, `leave_balances/${userKey}`), {
+                userId: userKey,
+                employeeName: newUser.name,
+                annual: 21,
+                casual: 7,
+                sick: 0,
+                exams: 0,
+                unpaid: 0
+            });
+        }
+
+        alert("تمت إضافة المستخدم وتهيئة رصيد إجازاته بنجاح");
         setNewUser({ 
             name: '', 
             username: '', 
@@ -121,8 +139,10 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
     };
 
     const handleDeleteUser = async (key: string) => {
-        if (confirm("هل أنت متأكد من حذف هذا المستخدم؟")) {
+        if (confirm("هل أنت متأكد من حذف هذا المستخدم؟ سيتم حذف حسابه وكافة بياناته المرتبطة.")) {
             await remove(ref(db, `users/${key}`));
+            await remove(ref(db, `leave_balances/${key}`));
+            await remove(ref(db, `notifications/${key}`));
         }
     };
 
@@ -189,12 +209,12 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
         return <div className="p-10 text-center opacity-50">عذراً، هذه الصفحة متاحة للمسؤولين فقط.</div>;
     }
 
-    const inputClass = "w-full p-2.5 rounded-lg border border-gray-300 text-black focus:ring-2 focus:ring-blue-500 outline-none";
-    const sectionClass = `p-6 rounded-2xl mb-6 ${theme === 'dark' ? 'bg-gray-800 border-gray-700 border' : 'bg-white shadow-xl'}`;
+    const inputClass = "w-full p-2.5 rounded-lg border border-gray-300 bg-gray-600 text-white focus:ring-2 focus:ring-blue-500 outline-none font-bold";
+    const sectionClass = `p-6 rounded-2xl mb-6 bg-gray-800 border-gray-700 border text-white`;
 
     return (
         <div className="max-w-5xl mx-auto space-y-8 pb-20">
-            <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center gap-3 mb-2 text-white">
                 <SettingsIcon className="text-blue-600" size={32} />
                 <h2 className="text-3xl font-bold">لوحة تحكم المسؤول</h2>
             </div>
@@ -206,14 +226,14 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label className="block text-sm font-bold mb-2 opacity-70">اسم التطبيق (AppName)</label>
+                        <label className="block text-sm font-bold mb-2 opacity-70 text-white">اسم التطبيق (AppName)</label>
                         <input className={inputClass} value={localSettings.appName} onChange={e => setLocalSettings({...localSettings, appName: e.target.value})} />
                     </div>
                     <div>
-                        <label className="block text-sm font-bold mb-2 opacity-70">رقم واتساب الدعم</label>
+                        <label className="block text-sm font-bold mb-2 opacity-70 text-white">رقم واتساب الدعم</label>
                         <input className={inputClass} placeholder="مثال: 2010XXXXXXXX" value={localSettings.whatsappNumber} onChange={e => setLocalSettings({...localSettings, whatsappNumber: e.target.value})} />
                     </div>
-                    <div className="md:col-span-2">
+                    <div className="md:col-span-2 text-white">
                         <label className="block text-sm font-bold mb-2 opacity-70">نص الشريط المتحرك (Ticker Text)</label>
                         <div className="flex gap-2">
                             <input className={inputClass} value={localSettings.tickerText} onChange={e => setLocalSettings({...localSettings, tickerText: e.target.value})} />
@@ -238,8 +258,8 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 </h3>
                 
                 {/* إضافة مستخدم جديد */}
-                <div className="bg-gray-50 dark:bg-black/20 p-6 rounded-2xl mb-6 border border-gray-200 dark:border-gray-700">
-                    <h4 className="font-bold mb-4 flex items-center gap-2 text-sm"><UserPlus size={16}/> إضافة موظف جديد</h4>
+                <div className="bg-gray-700/50 p-6 rounded-2xl mb-6 border border-gray-600">
+                    <h4 className="font-bold mb-4 flex items-center gap-2 text-sm text-white"><UserPlus size={16}/> إضافة موظف جديد</h4>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <input className={inputClass} placeholder="الاسم الكامل" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
                         <input className={inputClass} placeholder="اسم المستخدم" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} />
@@ -249,34 +269,34 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                             <option value="admin">مسؤول (Admin)</option>
                         </select>
                     </div>
-                    <button onClick={handleAddUser} className="mt-4 w-full bg-green-600 text-white font-bold py-2 rounded-lg hover:bg-green-700 transition">إضافة الموظف</button>
+                    <button onClick={handleAddUser} className="mt-4 w-full bg-green-600 text-white font-bold py-2 rounded-lg hover:bg-green-700 transition shadow-lg">إضافة الموظف</button>
                 </div>
 
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-right">
-                        <thead className="bg-gray-100 dark:bg-gray-700">
+                        <thead className="bg-gray-700">
                             <tr>
-                                <th className="p-3">الاسم</th>
-                                <th className="p-3">المستخدم</th>
-                                <th className="p-3">الدور</th>
-                                <th className="p-3 text-center">الإجراءات</th>
+                                <th className="p-3 text-white">الاسم</th>
+                                <th className="p-3 text-white">المستخدم</th>
+                                <th className="p-3 text-white">الدور</th>
+                                <th className="p-3 text-center text-white">الإجراءات</th>
                             </tr>
                         </thead>
                         <tbody>
                             {users.map(u => (
-                                <tr key={u.key} className="border-b border-gray-100 dark:border-gray-700 hover:bg-black/5">
-                                    <td className="p-3 font-bold">{u.name}</td>
-                                    <td className="p-3 opacity-70">{u.username}</td>
+                                <tr key={u.key} className="border-b border-gray-700 hover:bg-black/10">
+                                    <td className="p-3 font-bold text-white">{u.name}</td>
+                                    <td className="p-3 opacity-70 text-white">{u.username}</td>
                                     <td className="p-3">
                                         <span className={`px-2 py-1 rounded text-[10px] font-bold ${u.role === 'admin' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
                                             {u.role === 'admin' ? 'مسؤول' : 'موظف'}
                                         </span>
                                     </td>
                                     <td className="p-3 flex justify-center gap-1 md:gap-2">
-                                        <button onClick={() => setNotifModal({username: u.username, name: u.name})} className="p-2 text-green-600 hover:bg-green-50 rounded" title="إرسال رسالة تنبيه"><Send size={16}/></button>
-                                        <button onClick={() => setPermModal(u)} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="تعديل صلاحيات الأقسام"><Shield size={16}/></button>
-                                        <button onClick={() => setPassModal({key: u.key!, name: u.name})} className="p-2 text-orange-500 hover:bg-orange-50 rounded" title="تغيير كلمة المرور"><Key size={16}/></button>
-                                        <button onClick={() => handleDeleteUser(u.key!)} className="p-2 text-red-500 hover:bg-red-50 rounded" title="حذف الحساب"><Trash2 size={16}/></button>
+                                        <button onClick={() => setNotifModal({username: u.username, name: u.name})} className="p-2 text-green-400 hover:bg-green-400/10 rounded" title="إرسال رسالة تنبيه"><Send size={16}/></button>
+                                        <button onClick={() => setPermModal(u)} className="p-2 text-blue-400 hover:bg-blue-400/10 rounded permission-btn" title="تعديل صلاحيات الأقسام"><Shield size={16}/></button>
+                                        <button onClick={() => setPassModal({key: u.key!, name: u.name})} className="p-2 text-orange-400 hover:bg-orange-400/10 rounded" title="تغيير كلمة المرور"><Key size={16}/></button>
+                                        <button onClick={() => handleDeleteUser(u.key!)} className="p-2 text-red-400 hover:bg-red-400/10 rounded" title="حذف الحساب"><Trash2 size={16}/></button>
                                     </td>
                                 </tr>
                             ))}
@@ -285,146 +305,78 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 </div>
             </div>
 
-            {/* Modal: إرسال تنبيه */}
-            {notifModal && (
-                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[70] p-4 backdrop-blur-sm">
-                    <div className={`w-full max-w-md p-6 rounded-2xl shadow-2xl ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-white text-black'}`}>
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="font-bold flex items-center gap-2 text-green-600">
-                                <Send size={20} /> إرسال رسالة إلى: {notifModal.name}
-                            </h3>
-                            <button onClick={() => setNotifModal(null)} className="p-1 hover:bg-gray-100 rounded-full"><X /></button>
-                        </div>
-                        <div className="space-y-4">
-                            <div>
-                                <div className="flex justify-between items-end mb-1">
-                                    <label className="block text-xs font-bold opacity-60">نص الرسالة</label>
-                                    <span className={`text-[10px] font-bold ${notifMsg.length >= 1900 ? 'text-red-500' : 'text-gray-400'}`}>
-                                        {notifMsg.length} / 2000
-                                    </span>
-                                </div>
-                                <textarea 
-                                    className={`${inputClass} min-h-[120px] resize-none ${notifMsg.length >= 2000 ? 'border-red-300' : ''}`} 
-                                    placeholder="اكتب رسالتك هنا (بحد أقصى 2000 حرف)..." 
-                                    value={notifMsg} 
-                                    maxLength={2000}
-                                    onChange={e => setNotifMsg(e.target.value)}
-                                />
-                            </div>
-                            <button 
-                                onClick={handleSendNotif} 
-                                disabled={!notifMsg}
-                                className="w-full bg-green-600 text-white py-3 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 transition hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <Send size={18} /> إرسال التنبيه فوراً
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Modal: تعديل الصلاحيات الفردية */}
-            {permModal && (
-                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[70] p-4 backdrop-blur-sm">
-                    <div className={`w-full max-w-md p-6 rounded-2xl shadow-2xl ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-white text-black'}`}>
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="font-bold flex items-center gap-2 text-blue-600">
-                                <Shield size={20} /> صلاحيات: {permModal.name}
-                            </h3>
-                            <button onClick={() => setPermModal(null)} className="p-1 hover:bg-gray-100 rounded-full"><X /></button>
-                        </div>
-                        
-                        <div className="space-y-4">
-                            <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
-                                <span className="font-bold text-sm">رؤية مبيعات الزملاء</span>
-                                <button onClick={() => setPermModal({...permModal, canViewAllSales: !permModal.canViewAllSales})} className="text-blue-600">
-                                    {permModal.canViewAllSales ? <ToggleRight size={32} /> : <ToggleLeft size={32} />}
-                                </button>
-                            </div>
-
-                            <div className="space-y-2">
-                                <p className="text-xs font-bold text-gray-400 px-1 uppercase tracking-wider">ظهور الأقسام</p>
-                                {[
-                                    { key: 'showDailySales', label: 'المبيعات اليومية' },
-                                    { key: 'showSalesLog', label: 'سجل المبيعات' },
-                                    { key: 'showInventoryReg', label: 'تسجيل المخزون' },
-                                    { key: 'showInventoryLog', label: 'سجل المخزون' },
-                                    { key: 'showCompetitorPrices', label: 'أسعار المنافسين' },
-                                    { key: 'showCompetitorReports', label: 'تقارير المنافسين' }
-                                ].map(p => (
-                                    <div key={p.key} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-black/20 rounded-xl border border-gray-100 dark:border-gray-800">
-                                        <span className="text-sm font-medium">{p.label}</span>
-                                        <button onClick={() => toggleUserPerm(p.key as keyof UserPermissions)} className={permModal.permissions?.[p.key as keyof UserPermissions] ? 'text-green-600' : 'text-gray-400'}>
-                                            {permModal.permissions?.[p.key as keyof UserPermissions] ? <ToggleRight size={30} /> : <ToggleLeft size={30} />}
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        <button onClick={handleUpdatePermissions} className="w-full mt-6 bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2">
-                            <Save size={18} /> حفظ الصلاحيات المحدثة
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* Modal: تغيير كلمة المرور */}
+            {/* بقية النوافذ المنبثقة (كلمة السر، التنبيهات، الصلاحيات) */}
             {passModal && (
-                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[70] p-4 backdrop-blur-sm">
-                    <div className={`w-full max-w-sm p-6 rounded-2xl shadow-2xl ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-white text-black'}`}>
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold">تغيير كلمة مرور: {passModal.name}</h3>
-                            <button onClick={() => setPassModal(null)}><X /></button>
-                        </div>
+                <div className="fixed inset-0 z-[110] bg-black/80 flex items-center justify-center p-4">
+                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-sm">
+                        <h4 className="font-bold mb-4 text-white">تغيير كلمة مرور: {passModal.name}</h4>
                         <input 
                             type="password" 
                             className={inputClass} 
-                            placeholder="كلمة المرور الجديدة" 
-                            value={newPass} 
-                            onChange={e => setNewPass(e.target.value)} 
+                            placeholder="كلمة المرور الجديدة"
+                            value={newPass}
+                            onChange={e => setNewPass(e.target.value)}
                         />
-                        <button onClick={handleUpdatePassword} className="w-full mt-4 bg-orange-600 text-white py-2 rounded-xl font-bold shadow-lg">تحديث كلمة المرور</button>
+                        <div className="flex gap-2 mt-4">
+                            <button onClick={handleUpdatePassword} className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold">تحديث</button>
+                            <button onClick={() => setPassModal(null)} className="flex-1 bg-white/5 text-white py-2 rounded-lg">إلغاء</button>
+                        </div>
                     </div>
                 </div>
             )}
 
-             {/* إدارة الماركت والشركات */}
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className={sectionClass}>
-                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-blue-500 border-b pb-2">
-                        <MapPin size={18} /> إدارة الماركتات
-                    </h3>
-                    <div className="max-h-64 overflow-y-auto space-y-2 custom-scrollbar pr-2">
-                        {marketList.map(m => (
-                            <div key={m.key} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-black/20 rounded-xl text-sm border border-transparent hover:border-blue-500/20">
-                                <div>
-                                    <div className="font-bold">{m.name}</div>
-                                    <div className="text-[10px] opacity-50 italic">بواسطة: {m.createdBy}</div>
-                                </div>
-                                <button onClick={() => remove(ref(db, `settings/markets/${m.key}`))} className="p-1.5 text-red-500 hover:bg-red-50 rounded"><Trash2 size={14}/></button>
-                            </div>
-                        ))}
+            {permModal && (
+                <div className="fixed inset-0 z-[110] bg-black/80 flex items-center justify-center p-4">
+                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-lg">
+                        <h4 className="font-bold mb-6 text-white border-b pb-2 flex items-center gap-2">
+                            <Shield className="text-blue-500" size={18}/> تعديل صلاحيات: {permModal.name}
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+                            {[
+                                { key: 'showDailySales', label: 'المبيعات اليومية' },
+                                { key: 'showSalesLog', label: 'سجل المبيعات' },
+                                { key: 'showInventoryReg', label: 'تسجيل المخزون' },
+                                { key: 'showInventoryLog', label: 'سجل المخزون' },
+                                { key: 'showCompetitorPrices', label: 'أسعار المنافسين' },
+                                { key: 'showCompetitorReports', label: 'تقارير المنافسين' }
+                            ].map(item => (
+                                <button 
+                                    key={item.key} 
+                                    onClick={() => toggleUserPerm(item.key as any)}
+                                    className={`p-3 rounded-xl border text-sm font-bold flex justify-between items-center transition ${ (permModal.permissions as any)?.[item.key] ? 'bg-blue-600/20 border-blue-500 text-white' : 'bg-white/5 border-white/5 text-white/40'}`}
+                                >
+                                    {item.label}
+                                    {(permModal.permissions as any)?.[item.key] ? <ToggleRight className="text-blue-400"/> : <ToggleLeft/>}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="flex gap-2">
+                            <button onClick={handleUpdatePermissions} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg active:scale-95 transition">حفظ التغييرات</button>
+                            <button onClick={() => setPermModal(null)} className="flex-1 bg-white/5 text-white py-3 rounded-xl">إغاء</button>
+                        </div>
                     </div>
                 </div>
+            )}
 
-                <div className={sectionClass}>
-                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-green-500 border-b pb-2">
-                        <Building2 size={18} /> إدارة الشركات
-                    </h3>
-                    <div className="max-h-64 overflow-y-auto space-y-2 custom-scrollbar pr-2">
-                        {companyList.map(c => (
-                            <div key={c.key} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-black/20 rounded-xl text-sm border border-transparent hover:border-green-500/20">
-                                <div>
-                                    <div className="font-bold">{c.name}</div>
-                                    <div className="text-[10px] opacity-50 italic">بواسطة: {c.createdBy}</div>
-                                </div>
-                                <button onClick={() => remove(ref(db, `settings/companies/${c.key}`))} className="p-1.5 text-red-500 hover:bg-red-50 rounded"><Trash2 size={14}/></button>
-                            </div>
-                        ))}
+            {notifModal && (
+                <div className="fixed inset-0 z-[110] bg-black/80 flex items-center justify-center p-4">
+                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-sm">
+                        <h4 className="font-bold mb-4 text-white">إرسال رسالة تنبيه إلى: {notifModal.name}</h4>
+                        <textarea 
+                            className={`${inputClass} min-h-[100px] mb-4`}
+                            placeholder="اكتب رسالتك هنا..."
+                            value={notifMsg}
+                            onChange={e => setNotifMsg(e.target.value)}
+                        />
+                        <div className="flex gap-2">
+                            <button onClick={handleSendNotif} className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-2">
+                                <Send size={16}/> إرسال الآن
+                            </button>
+                            <button onClick={() => setNotifModal(null)} className="flex-1 bg-white/5 text-white py-2 rounded-lg">إلغاء</button>
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 };

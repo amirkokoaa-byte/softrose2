@@ -48,6 +48,14 @@ const InventoryRegistration: React.FC<Props> = ({ user, markets, theme }) => {
     }, []);
 
     const updateItem = (id: string, field: 'qty' | 'name', value: any) => {
+        // إذا كان تعديل الاسم لصنف مخصص، نتحقق من اللغة
+        if (field === 'name') {
+            const containsArabic = /[\u0600-\u06FF]/.test(value);
+            if (containsArabic) {
+                alert("يرجى كتابة اسم الصنف باللغة الإنجليزية فقط");
+                return;
+            }
+        }
         setItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
     };
 
@@ -68,6 +76,11 @@ const InventoryRegistration: React.FC<Props> = ({ user, markets, theme }) => {
 
     const handleSave = async () => {
         if (!selectedMarket) return alert("اختر الماركت");
+        
+        // التحقق من أن جميع الأصناف المخصصة مكتوبة بالإنجليزية
+        const arabicItems = items.filter(i => i.qty > 0 && /[\u0600-\u06FF]/.test(i.name));
+        if (arabicItems.length > 0) return alert("يرجى التأكد من كتابة أسماء الأصناف الجديدة بالإنجليزية فقط");
+
         const inventoryData = {
             market: selectedMarket,
             date: new Date().toLocaleDateString('ar-EG'),
@@ -81,25 +94,18 @@ const InventoryRegistration: React.FC<Props> = ({ user, markets, theme }) => {
         setItems(prev => prev.map(i => ({...i, qty: 0})));
     };
 
-    const handleAddMarket = async () => {
-         const name = prompt("ادخل اسم الماركت الجديد:");
-         if (name) await push(ref(db, 'settings/markets'), { name, createdBy: user.username });
-    };
-
-    const inputClass = theme === 'win10' || theme === 'light' 
-        ? "border border-gray-300 p-2 rounded text-black" 
-        : "bg-white/10 border border-white/20 p-2 rounded text-white";
+    const dropdownClass = "w-48 bg-[#808080] text-white border border-white/20 p-2.5 rounded-xl font-bold outline-none";
+    const inputClass = "bg-white/10 border border-white/20 p-2 rounded text-white";
 
     return (
         <div className="pb-20">
-            <div className="flex justify-between mb-6">
+            <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">تسجيل المخزون</h2>
                 <div className="flex gap-2">
-                    <select className={`${inputClass} w-48`} value={selectedMarket} onChange={e => setSelectedMarket(e.target.value)}>
+                    <select className={dropdownClass} value={selectedMarket} onChange={e => setSelectedMarket(e.target.value)}>
                         <option value="">اختر الماركت</option>
                         {markets.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
-                    <button onClick={handleAddMarket} className="bg-blue-500 text-white p-2 rounded"><Plus /></button>
                 </div>
             </div>
 
@@ -108,7 +114,7 @@ const InventoryRegistration: React.FC<Props> = ({ user, markets, theme }) => {
                     <div className="flex justify-between items-center mb-4 border-b border-gray-500/20 pb-2">
                         <h3 className="text-xl font-bold text-blue-500">{cat.name}</h3>
                         {cat.allowAdd && (
-                             <button onClick={() => handleAddCustomItem(cat.key)} className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1.5 rounded flex items-center gap-1 shadow"><Plus size={14}/> اضف صنف</button>
+                             <button onClick={() => handleAddCustomItem(cat.key)} className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1.5 rounded flex items-center gap-1 shadow"><Plus size={14}/> أضف صنف</button>
                         )}
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -116,7 +122,7 @@ const InventoryRegistration: React.FC<Props> = ({ user, markets, theme }) => {
                             <div key={item.id} className="flex justify-between items-center gap-2 p-2 border-b border-gray-500/10">
                                 <div className="flex-1">
                                     {item.isCustom ? (
-                                        <input type="text" value={item.name} onChange={e => updateItem(item.id, 'name', e.target.value)} className={`${inputClass} w-full text-sm`} placeholder="اسم الصنف الجديد..." />
+                                        <input type="text" value={item.name} onChange={e => updateItem(item.id, 'name', e.target.value)} className={`${inputClass} w-full text-sm`} placeholder="اسم الصنف (English Only)..." />
                                     ) : (
                                         <span className="text-sm font-medium">{item.name}</span>
                                     )}
@@ -131,7 +137,10 @@ const InventoryRegistration: React.FC<Props> = ({ user, markets, theme }) => {
                 </div>
             ))}
             <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-8 md:w-auto flex justify-center z-10">
-                <button onClick={handleSave} className="w-full md:w-64 bg-green-600 hover:bg-green-700 text-white py-3 rounded-full font-bold shadow-xl flex justify-center items-center gap-2 transform transition hover:scale-105">
+                <button 
+                    onClick={handleSave} 
+                    className="w-full md:w-64 bg-green-600 hover:bg-green-700 text-white py-3 rounded-full font-bold shadow-xl flex justify-center items-center gap-2 transform transition hover:scale-105"
+                >
                     <Save size={20} /> حفظ المخزون
                 </button>
             </div>

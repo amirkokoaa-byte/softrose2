@@ -14,6 +14,7 @@ export interface SaleRecord {
     timestamp: number;
     market: string;
     employeeName: string;
+    username?: string;
     items: ProductItem[];
     total: number;
 }
@@ -32,6 +33,7 @@ export interface CompetitorPrice {
     market: string;
     company: string;
     date: string;
+    timestamp: number;
     employeeName?: string;
     items: { category: string; name: string; price: number }[];
 }
@@ -62,7 +64,7 @@ export interface AppSettings {
     tickerText: string;
     tickerEnabled: boolean;
     whatsappNumber: string;
-    permissions: UserPermissions; // Default permissions for system
+    permissions: UserPermissions;
 }
 
 export interface LeaveBalance {
@@ -73,6 +75,7 @@ export interface LeaveBalance {
     sick: number;
     exams: number;
     unpaid: number;
+    lastUnpaidReset?: string; // تتبع آخر شهر تم فيه تصفير الغياب "YYYY-MM"
 }
 
 export interface LeaveRecord {
@@ -91,4 +94,24 @@ export interface AppNotification {
     sender: string;
     timestamp: number;
     isRead: boolean;
+}
+
+export interface UserTarget {
+    userId: string;
+    employeeName: string;
+    market: string;
+    suggestedAmount: number;
+    growthPercent: number;
+    finalTarget: number;
+    achieved: number;
+    lastResetMonth: string; // "YYYY-MM"
+}
+
+export interface TargetHistory {
+    id?: string;
+    userId: string;
+    employeeName: string;
+    month: string;
+    targetAmount: number;
+    achievedAmount: number;
 }

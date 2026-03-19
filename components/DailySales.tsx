@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
-import { ref, push, set } from "firebase/database";
+import { ref, push, onValue, set, get, update } from "firebase/database";
 import { db } from '../firebase';
-import { User, ProductItem } from '../types';
+import { User, ProductItem, UserTarget } from '../types';
 import { PRODUCTS_FACIAL, PRODUCTS_KITCHEN, PRODUCTS_TOILET, PRODUCTS_DOLPHIN } from '../constants';
-import { Plus, Trash2, Save } from 'lucide-react';
+import { Save, Plus, Calculator, Target, TrendingUp, AlertCircle, Edit, Trash2, Check, X } from 'lucide-react';
 
 interface Props {
     user: User;
@@ -15,171 +15,266 @@ interface Props {
 const DailySales: React.FC<Props> = ({ user, markets, theme }) => {
     const [selectedMarket, setSelectedMarket] = useState('');
     const [salesItems, setSalesItems] = useState<ProductItem[]>([]);
-    const [notification, setNotification] = useState('');
-
-    const allCategories = [
-        { name: 'مناديل السحب (Facial)', items: PRODUCTS_FACIAL, key: 'Facial' },
-        { name: 'مناديل المطبخ (Kitchen)', items: PRODUCTS_KITCHEN, key: 'Kitchen' },
-        { name: 'مناديل تواليت (Toilet)', items: PRODUCTS_TOILET, key: 'Toilet' },
-        { name: 'مناديل دولفن (Dolphin)', items: PRODUCTS_DOLPHIN, key: 'Dolphin' },
-    ];
+    const [userTarget, setUserTarget] = useState<UserTarget | null>(null);
+    
+    // حالات التعديل الجديدة
+    const [editingItemId, setEditingItemId] = useState<string | null>(null);
+    const [tempName, setTempName] = useState('');
 
     useEffect(() => {
         const initialItems: ProductItem[] = [];
-        allCategories.forEach(cat => {
-            cat.items.forEach(itemName => {
-                initialItems.push({
-                    id: itemName + Math.random(),
-                    category: cat.key,
-                    name: itemName,
-                    price: 0,
-                    qty: 0,
-                    isCustom: false
+        const categories = [
+            { name: 'مناديل السحب (Facial)', items: PRODUCTS_FACIAL, key: 'Facial' },
+            { name: 'مناديل المطبخ (Kitchen)', items: PRODUCTS_KITCHEN, key: 'Kitchen' },
+            { name: 'مناديل تواليت (Toilet)', items: PRODUCTS_TOILET, key: 'Toilet' },
+            { name: 'مناديل دولفن (Dolphin)', items: PRODUCTS_DOLPHIN, key: 'Dolphin' },
+        ];
+        
+        categories.forEach(cat => {
+            cat.items.forEach(name => {
+                initialItems.push({ 
+                    id: name + "_base_" + Math.random().toString(36).substr(2, 9), 
+                    name, 
+                    price: 0, 
+                    qty: 0, 
+                    category: cat.key 
                 });
             });
         });
         setSalesItems(initialItems);
-    }, []);
 
-    const updateItem = (id: string, field: keyof ProductItem, value: any) => {
-        setSalesItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+        if (user.key) {
+            const targetRef = ref(db, `targets/${user.key}`);
+            onValue(targetRef, (snapshot) => {
+                if (snapshot.exists()) {
+                    const data = snapshot.val() as UserTarget;
+                    const now = new Date();
+                    const currentMonth = `${now.getFullYear()}-${now.getMonth() + 1}`;
+                    
+                    if (data.lastResetMonth !== currentMonth) {
+                        const historyRef = ref(db, `target_history/${user.key}`);
+                        push(historyRef, {
+                            userId: data.userId,
+                            employeeName: data.employeeName,
+                            month: data.lastResetMonth,
+                            targetAmount: data.finalTarget,
+                            achievedAmount: data.achieved
+                        });
+
+                        update(targetRef, {
+                            achieved: 0,
+                            lastResetMonth: currentMonth
+                        });
+                    } else {
+                        setUserTarget(data);
+                    }
+                } else {
+                    setUserTarget(null);
+                }
+            });
+        }
+    }, [user.key, user.name]);
+
+    const updateItem = (id: string, field: string, value: any) => {
+        setSalesItems(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
     };
 
-    const handleAddCustomItem = (category: string) => {
-        const newItem: ProductItem = {
-            id: `custom_${Date.now()}_${Math.random()}`,
-            category,
-            name: '',
-            price: 0,
-            qty: 0,
-            isCustom: true
-        };
-        setSalesItems(prev => [...prev, newItem]);
+    const deleteItem = (id: string) => {
+        if (confirm("هل تريد حذف هذا الصنف من القائمة الحالية؟")) {
+            setSalesItems(prev => prev.filter(i => i.id !== id));
+        }
     };
 
-    const removeCustomItem = (id: string) => {
-        setSalesItems(prev => prev.filter(i => i.id !== id));
+    const startEditingName = (id: string, currentName: string) => {
+        setEditingItemId(id);
+        setTempName(currentName);
     };
 
-    const calculateTotal = () => salesItems.reduce((sum, item) => sum + ((Number(item.price) || 0) * (Number(item.qty) || 0)), 0);
+    const saveName = (id: string) => {
+        const containsArabic = /[\u0600-\u06FF]/.test(tempName);
+        if (containsArabic) {
+            alert("يرجى كتابة اسم الصنف باللغة الإنجليزية فقط");
+            return;
+        }
+        setSalesItems(prev => prev.map(i => i.id === id ? { ...i, name: tempName } : i));
+        setEditingItemId(null);
+    };
+
+    const addCustomItem = (category: string) => {
+        const newItemName = prompt("ادخل اسم الصنف الجديد (English Only):");
+        if (newItemName) {
+            const containsArabic = /[\u0600-\u06FF]/.test(newItemName);
+            if (containsArabic) {
+                alert("يرجى كتابة اسم الصنف باللغة الإنجليزية فقط");
+                return;
+            }
+
+            setSalesItems(prev => [
+                ...prev,
+                {
+                    id: newItemName + "_" + Date.now(),
+                    name: newItemName,
+                    price: 0,
+                    qty: 0,
+                    category,
+                    isCustom: true
+                }
+            ]);
+        }
+    };
+
+    const currentTotal = salesItems.reduce((sum, item) => sum + ((item.price || 0) * (item.qty || 0)), 0);
 
     const handleSave = async () => {
-        if (!selectedMarket) return alert("الرجاء اختيار الماركت");
-        const soldItems = salesItems.filter(item => (item.name && Number(item.price) > 0 && Number(item.qty) > 0));
-        if (soldItems.length === 0) return alert("لا يوجد مبيعات مكتملة للحفظ");
+        if (!selectedMarket) return alert("اختر الماركت");
+        const sold = salesItems.filter(i => i.qty > 0 && i.price > 0);
+        if (!sold.length) return alert("أدخل بيانات صحيحة");
 
-        const saleData = {
+        await push(ref(db, 'sales'), {
             market: selectedMarket,
             employeeName: user.name,
+            username: user.username,
             date: new Date().toLocaleDateString('ar-EG'),
             timestamp: Date.now(),
-            items: soldItems,
-            total: calculateTotal()
-        };
-
-        await push(ref(db, 'sales'), saleData);
-        setNotification('تم حفظ المبيعات بنجاح!');
-        // Reset only values, but keep the custom items for a while? Or clear all?
-        setSalesItems(prev => {
-            const fixedOnly = prev.filter(i => !i.isCustom).map(i => ({...i, price: 0, qty: 0}));
-            return fixedOnly;
+            items: sold,
+            total: currentTotal
         });
-        setTimeout(() => setNotification(''), 3000);
+
+        if (user.key && userTarget) {
+            const targetRef = ref(db, `targets/${user.key}`);
+            const newAchieved = (userTarget.achieved || 0) + currentTotal;
+            await update(targetRef, { achieved: newAchieved });
+        }
+
+        alert("تم الحفظ بنجاح");
+        setSalesItems(prev => prev.map(i => ({...i, price: 0, qty: 0})));
     };
 
-    const handleAddMarket = async () => {
-        const name = prompt("ادخل اسم الماركت الجديد:");
-        if (name) await push(ref(db, 'settings/markets'), { name, createdBy: user.username });
-    };
-
-    const inputClass = theme === 'win10' || theme === 'light' 
-        ? "border border-gray-300 p-2 rounded w-full text-black" 
-        : "bg-white/10 border border-white/20 p-2 rounded w-full text-white placeholder-gray-400";
+    const remaining = userTarget ? Math.max(0, userTarget.finalTarget - userTarget.achieved) : 0;
+    const progressPercent = userTarget ? Math.min(100, Math.round((userTarget.achieved / userTarget.finalTarget) * 100)) : 0;
 
     return (
         <div className="space-y-6 pb-20">
-            <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                <h2 className="text-2xl font-bold">المبيعات اليومية</h2>
-                <div className="text-xl font-bold bg-green-500 text-white px-4 py-2 rounded shadow w-full md:w-auto text-center">
-                    إجمالي الفاتورة: {calculateTotal().toLocaleString()} ج.م
-                </div>
-            </div>
-
-            <div className="flex items-end gap-2">
-                <div className="flex-1">
-                    <label className="block mb-1 font-semibold">اسم الماركت</label>
-                    <select value={selectedMarket} onChange={(e) => setSelectedMarket(e.target.value)} className={inputClass}>
-                        <option value="">اختر الماركت...</option>
-                        {markets.map((m, idx) => <option key={idx} value={m}>{m}</option>)}
-                    </select>
-                </div>
-                <button onClick={handleAddMarket} className="bg-blue-500 hover:bg-blue-600 text-white p-2 rounded mb-[2px]"><Plus size={24} /></button>
-            </div>
-
-            {allCategories.map(cat => (
-                <div key={cat.key} className="bg-white/5 p-4 rounded-xl border border-gray-500/10">
-                    <div className="flex justify-between items-center mb-4 border-b border-gray-500/20 pb-2">
-                        <h3 className="text-xl font-bold text-blue-500">{cat.name}</h3>
-                        <button 
-                            onClick={() => handleAddCustomItem(cat.key)} 
-                            className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1.5 rounded flex items-center gap-1 shadow"
-                        >
-                            <Plus size={14}/> اضف صنف
-                        </button>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <h2 className="text-2xl font-bold text-white">المبيعات اليومية</h2>
+                
+                <div className="flex flex-wrap gap-4">
+                    <div className="bg-blue-600/20 border border-blue-500/50 p-4 rounded-3xl flex items-center gap-4 shadow-lg min-w-[200px]">
+                        <div className="bg-blue-600 p-2 rounded-2xl text-white">
+                            <Calculator size={24} />
+                        </div>
+                        <div>
+                            <div className="text-[10px] font-black opacity-60 text-white uppercase tracking-widest">إجمالي المبيعات الحالية</div>
+                            <div className="text-2xl font-black text-blue-400">
+                                {currentTotal.toLocaleString()} <span className="text-xs">ج.م</span>
+                            </div>
+                        </div>
                     </div>
 
-                    {/* سطر الترويسة الجديد */}
-                    <div className="grid grid-cols-12 gap-1 items-center bg-gray-500/10 p-2 rounded mb-2 text-[10px] md:text-xs font-bold opacity-70">
+                    {userTarget && (
+                        <div className="bg-purple-600/20 border border-purple-500/50 p-4 rounded-3xl flex items-center gap-4 shadow-lg min-w-[280px]">
+                            <div className="bg-purple-600 p-2 rounded-2xl text-white">
+                                <Target size={24} />
+                            </div>
+                            <div className="flex-1">
+                                <div className="text-[10px] font-black opacity-60 text-white uppercase tracking-widest">متابعة التارجت ( {userTarget.finalTarget.toLocaleString()} ج.م )</div>
+                                <div className="flex justify-between items-end">
+                                    <div className="text-lg font-black text-purple-400">
+                                        المتبقي: {remaining.toLocaleString()}
+                                    </div>
+                                    <div className="text-sm font-bold text-green-400">
+                                        {progressPercent}%
+                                    </div>
+                                </div>
+                                <div className="w-full bg-black/40 h-1.5 rounded-full mt-1 overflow-hidden">
+                                    <div className="bg-green-500 h-full transition-all duration-1000" style={{ width: `${progressPercent}%` }}></div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <select className="w-full p-4 rounded-2xl bg-gray-800 text-white border border-white/10" value={selectedMarket} onChange={e => setSelectedMarket(e.target.value)}>
+                <option value="">اختر الماركت من القائمة...</option>
+                {markets.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+
+            {[
+                { label: 'مناديل السحب (Facial)', key: 'Facial' },
+                { label: 'مناديل المطبخ (Kitchen)', key: 'Kitchen' },
+                { label: 'تواليت (Toilet)', key: 'Toilet' },
+                { label: 'دولفن (Dolphin)', key: 'Dolphin' }
+            ].map(cat => (
+                <div key={cat.key} className="bg-gray-800 p-4 rounded-3xl border border-white/5 shadow-xl">
+                    <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-2">
+                        <h3 className="font-bold text-blue-400">{cat.label}</h3>
+                        <button 
+                            onClick={() => addCustomItem(cat.key)}
+                            className="bg-green-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow-lg active:scale-95 transition"
+                        >
+                            <Plus size={14}/> أضف صنف
+                        </button>
+                    </div>
+                    
+                    <div className="grid grid-cols-12 gap-2 mb-2 px-2 text-[10px] font-black opacity-60 uppercase text-white">
                         <div className="col-span-4 pr-2">الصنف</div>
-                        <div className="col-span-3 text-center">سعر القطعة</div>
-                        <div className="col-span-2 text-center">العدد</div>
-                        <div className="col-span-2 text-center">الإجمالي</div>
-                        <div className="col-span-1"></div>
+                        <div className="col-span-2 text-center">السعر</div>
+                        <div className="col-span-2 text-center">الكمية</div>
+                        <div className="col-span-2 text-center">المجموع</div>
+                        <div className="col-span-2 text-center">إجراء</div>
                     </div>
 
                     <div className="space-y-2">
-                        {salesItems.filter(item => item.category === cat.key).map((item) => (
-                            <div key={item.id} className="grid grid-cols-12 gap-1 items-center bg-black/5 p-1 rounded">
-                                <div className="col-span-4 text-xs pr-2">
-                                    {item.isCustom ? (
-                                        <input 
-                                            type="text" 
-                                            value={item.name} 
-                                            onChange={(e) => updateItem(item.id, 'name', e.target.value)} 
-                                            className={`${inputClass} h-8 text-[10px]`} 
-                                            placeholder="اسم الصنف..." 
-                                        />
+                        {salesItems.filter(i => i.category === cat.key).map(item => (
+                            <div key={item.id} className="grid grid-cols-12 gap-2 items-center bg-black/20 p-2 rounded-2xl border border-transparent hover:border-white/10 transition">
+                                <div className="col-span-4 pr-2 font-bold text-white">
+                                    {editingItemId === item.id ? (
+                                        <div className="flex gap-1">
+                                            <input 
+                                                type="text" 
+                                                className="w-full bg-gray-700 border border-blue-500/50 p-1.5 rounded-lg text-white text-[10px] font-bold"
+                                                value={tempName}
+                                                onChange={e => setTempName(e.target.value)}
+                                                autoFocus
+                                            />
+                                            <button onClick={() => saveName(item.id)} className="text-green-400 p-1 hover:bg-green-400/10 rounded"><Check size={14}/></button>
+                                            <button onClick={() => setEditingItemId(null)} className="text-red-400 p-1 hover:bg-red-400/10 rounded"><X size={14}/></button>
+                                        </div>
                                     ) : (
-                                        <div className="truncate">{item.name}</div>
+                                        <span className="text-[11px] truncate block" title={item.name}>{item.name}</span>
                                     )}
-                                </div>
-                                <div className="col-span-3">
-                                    <input type="number" value={item.price || ''} onChange={(e) => updateItem(item.id, 'price', parseFloat(e.target.value))} className={`${inputClass} text-center h-8 text-xs`} placeholder="السعر" />
                                 </div>
                                 <div className="col-span-2">
-                                    <input type="number" value={item.qty || ''} onChange={(e) => updateItem(item.id, 'qty', parseFloat(e.target.value))} className={`${inputClass} text-center h-8 text-xs`} placeholder="0" />
+                                    <input type="number" placeholder="0" className="w-full bg-gray-700 border border-white/10 p-2 rounded-xl text-white text-center text-xs font-bold" value={item.price || ''} onChange={e => updateItem(item.id, 'price', parseFloat(e.target.value))} />
                                 </div>
-                                <div className="col-span-2 text-center font-bold text-xs">{(Number(item.price) * Number(item.qty)) || '-'}</div>
-                                <div className="col-span-1 flex justify-center">
-                                    {item.isCustom && (
-                                        <button onClick={() => removeCustomItem(item.id)} className="text-red-500 hover:bg-red-50 p-1 rounded transition">
-                                            <Trash2 size={14} />
+                                <div className="col-span-2">
+                                    <input type="number" placeholder="0" className="w-full bg-gray-700 border border-white/10 p-2 rounded-xl text-white text-center text-xs font-bold" value={item.qty || ''} onChange={e => updateItem(item.id, 'qty', parseFloat(e.target.value))} />
+                                </div>
+                                <div className="col-span-2 text-center font-black text-xs text-green-400">
+                                    {((item.price || 0) * (item.qty || 0)).toLocaleString()}
+                                </div>
+                                <div className="col-span-2 flex justify-center gap-1">
+                                    {user.role === 'admin' && editingItemId !== item.id && (
+                                        <button onClick={() => startEditingName(item.id, item.name)} className="p-2 text-blue-400 hover:bg-blue-400/10 rounded-xl transition" title="تعديل المسمى">
+                                            <Edit size={14} />
                                         </button>
                                     )}
+                                    <button onClick={() => deleteItem(item.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-xl transition" title="حذف">
+                                        <Trash2 size={14} />
+                                    </button>
                                 </div>
                             </div>
                         ))}
                     </div>
                 </div>
             ))}
-
-            <div className="mt-8 flex justify-center sticky bottom-4 z-10">
-                <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-full shadow-xl flex items-center gap-2 text-lg transform hover:scale-105 transition w-full md:w-auto justify-center">
-                    <Save size={24} /> حفظ وترحيل
+            
+            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 w-full max-w-md px-4 z-50">
+                <button onClick={handleSave} className="w-full bg-green-600 hover:bg-green-700 text-white py-4 rounded-3xl font-black shadow-2xl flex justify-center items-center gap-2 transform active:scale-95 transition">
+                    <Save size={20} /> حفظ وترحيل المبيعات
                 </button>
             </div>
-
-            {notification && <div className="fixed bottom-4 left-4 right-4 md:right-auto bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg animate-bounce text-center z-50">{notification}</div>}
         </div>
     );
 };

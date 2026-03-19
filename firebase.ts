@@ -1,9 +1,10 @@
+
 import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAklmsuYWvws9GiMuKLRRG9NrW8wKgryeA",
+  apiKey: "AIzaSyD_kK2e96IQLfr1M5YzBDp6rPuxBBjYE5E",
   authDomain: "happyhome-bc5e7.firebaseapp.com",
   databaseURL: "https://happyhome-bc5e7-default-rtdb.firebaseio.com",
   projectId: "happyhome-bc5e7",

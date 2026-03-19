@@ -1,11 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
-import { ref, onValue, remove, update } from "firebase/database";
-import { User, SaleRecord, ProductItem } from '../types';
+import { ref, onValue, remove, update, get, set, push } from "firebase/database";
+import { User, SaleRecord, ProductItem, UserTarget, TargetHistory } from '../types';
 import { 
-    Trash2, Edit, FileSpreadsheet, Save, X, Calculator, 
-    TrendingUp, Calendar, Search, Download, Trophy, Star, User as UserIcon
+    Trash2, Edit, FileSpreadsheet, Save, X, Calendar, User as UserIcon, TrendingUp, Star, Trophy, Download, Filter, Target, History, Copy, Search, Package, ShoppingBag, Calculator
 } from 'lucide-react';
 import { exportToCSV } from '../utils';
 
@@ -18,397 +17,623 @@ interface Props {
 const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
     const [sales, setSales] = useState<SaleRecord[]>([]);
     const [filteredSales, setFilteredSales] = useState<SaleRecord[]>([]);
-    const [editingSale, setEditingSale] = useState<SaleRecord | null>(null);
-    
-    // Filters
+    const [usersList, setUsersList] = useState<User[]>([]);
     const [filterDate, setFilterDate] = useState('');
     const [filterEmployee, setFilterEmployee] = useState('');
     const [filterMarket, setFilterMarket] = useState('');
+    
+    // Target Management State
+    const [showTargetModal, setShowTargetModal] = useState(false);
+    const [showArchiveModal, setShowArchiveModal] = useState(false);
+    const [archiveEmployee, setArchiveEmployee] = useState('all');
+    const [archiveSearch, setArchiveSearch] = useState('');
+    const [archiveData, setArchiveData] = useState<TargetHistory[]>([]);
+    
+    // Product Sales Report State
+    const [showProductSalesModal, setShowProductSalesModal] = useState(false);
+    const [reportItem, setReportItem] = useState('all');
+    const [reportMarket, setReportMarket] = useState('all');
+    const [reportStart, setReportStart] = useState('');
+    const [reportEnd, setReportEnd] = useState('');
 
-    // Period Stats States
-    const [showStatsModal, setShowStatsModal] = useState(false);
-    const [statsStart, setStatsStart] = useState('');
-    const [statsEnd, setStatsEnd] = useState('');
-    const [statsMarket, setStatsMarket] = useState('');
+    const [targetMarket, setTargetMarket] = useState('');
+    const [targetEmployeeKey, setTargetEmployeeKey] = useState('');
+    const [suggestedTarget, setSuggestedTarget] = useState(0);
+    const [growthPercent, setGrowthPercent] = useState(0);
+    const [finalTarget, setFinalTarget] = useState(0);
+
+    const [editingSale, setEditingSale] = useState<SaleRecord | null>(null);
+    const [showExportModal, setShowExportModal] = useState(false);
+    const [exportStart, setExportStart] = useState('');
+    const [exportEnd, setExportEnd] = useState('');
+    const [exportMarket, setExportMarket] = useState('');
 
     useEffect(() => {
-        const salesRef = ref(db, 'sales');
-        onValue(salesRef, (snapshot) => {
+        onValue(ref(db, 'sales'), (snapshot) => {
             const data = snapshot.val();
             if (data) {
-                let loadedSales: SaleRecord[] = Object.keys(data).map(key => ({
-                    id: key,
-                    ...data[key]
-                }));
-                
+                let loadedSales: SaleRecord[] = Object.keys(data).map(key => ({ id: key, ...data[key] }));
                 if (user.role !== 'admin' && !user.canViewAllSales) {
                     loadedSales = loadedSales.filter(s => s.employeeName === user.name);
                 }
-
                 setSales(loadedSales.sort((a, b) => b.timestamp - a.timestamp));
-            } else {
-                setSales([]);
-            }
+            } else { setSales([]); }
         });
+
+        if (user.role === 'admin') {
+            onValue(ref(db, 'users'), (snap) => {
+                if (snap.exists()) {
+                    const list: User[] = [];
+                    snap.forEach(child => { list.push({ key: child.key!, ...child.val() }); });
+                    setUsersList(list);
+                }
+            });
+        }
     }, [user]);
 
     useEffect(() => {
         let result = sales;
-        if (filterDate) {
-            result = result.filter(s => s.date.includes(filterDate) || new Date(s.timestamp).toISOString().slice(0,10) === filterDate);
-        }
-        if (filterEmployee) {
-            result = result.filter(s => s.employeeName.includes(filterEmployee));
-        }
-        if (filterMarket) {
-            result = result.filter(s => s.market === filterMarket);
-        }
+        if (filterDate) result = result.filter(s => s.date.includes(filterDate));
+        if (filterEmployee) result = result.filter(s => s.employeeName.includes(filterEmployee));
+        if (filterMarket) result = result.filter(s => s.market === filterMarket);
         setFilteredSales(result);
     }, [sales, filterDate, filterEmployee, filterMarket]);
 
-    // --- Statistics Calculations ---
-    const getMonthlyData = () => {
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).getTime();
-        
-        return sales.filter(s => s.timestamp >= startOfMonth && s.timestamp <= endOfMonth);
-    };
+    // حساب التارجت المقترح تلقائياً
+    useEffect(() => {
+        if (targetEmployeeKey) {
+            const employee = usersList.find(u => u.key === targetEmployeeKey);
+            if (employee) {
+                const now = new Date();
+                const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+                const end = new Date(now.getFullYear(), now.getMonth(), 30, 23, 59, 59).getTime();
+                
+                const employeeSales = sales.filter(s => 
+                    s.employeeName === employee.name && 
+                    s.timestamp >= start && 
+                    s.timestamp <= end
+                );
+                const sum = employeeSales.reduce((acc, s) => acc + s.total, 0);
+                setSuggestedTarget(sum);
+            }
+        }
+    }, [targetEmployeeKey, sales, usersList]);
 
-    const calculateAggregatedStats = (records: SaleRecord[]) => {
-        const aggregation: Record<string, { name: string, price: number, qty: number, total: number }> = {};
-        const employeeTotals: Record<string, number> = {};
-        let grandTotal = 0;
+    // حساب التارجت النهائي تلقائياً
+    useEffect(() => {
+        const final = suggestedTarget + (suggestedTarget * (growthPercent / 100));
+        setFinalTarget(Math.round(final));
+    }, [suggestedTarget, growthPercent]);
 
-        records.forEach(sale => {
-            // Employee totals
-            employeeTotals[sale.employeeName] = (employeeTotals[sale.employeeName] || 0) + sale.total;
-            
-            // Item aggregation
-            (sale.items || []).forEach(item => {
-                const key = `${item.name}_${item.price}`;
-                if (!aggregation[key]) {
-                    aggregation[key] = { name: item.name, price: Number(item.price), qty: 0, total: 0 };
+    // استخراج قائمة الأصناف الفريدة والأسواق التي بها مبيعات
+    const uniqueItems = useMemo(() => {
+        const set = new Set<string>();
+        sales.forEach(s => s.items?.forEach(i => set.add(i.name)));
+        return Array.from(set).sort();
+    }, [sales]);
+
+    const marketsWithSales = useMemo(() => {
+        const set = new Set<string>();
+        sales.forEach(s => set.add(s.market));
+        return Array.from(set).sort();
+    }, [sales]);
+
+    // حساب نتائج تقرير مبيعات الأصناف
+    const reportResults = useMemo<{ 
+        totalQty: number; 
+        totalValue: number; 
+        itemsGrouped: Record<string, { price: number; qty: number; total: number }>;
+    }>(() => {
+        let results = sales;
+        if (reportMarket !== 'all') results = results.filter(s => s.market === reportMarket);
+        if (reportStart) {
+            const startTS = new Date(reportStart).setHours(0,0,0,0);
+            results = results.filter(s => s.timestamp >= startTS);
+        }
+        if (reportEnd) {
+            const endTS = new Date(reportEnd).setHours(23,59,59,999);
+            results = results.filter(s => s.timestamp <= endTS);
+        }
+
+        let totalQty = 0;
+        let totalValue = 0;
+        const itemsGrouped: Record<string, { price: number, qty: number, total: number }> = {};
+
+        results.forEach(s => {
+            (s.items || []).forEach(i => {
+                if (reportItem === 'all' || i.name === reportItem) {
+                    totalQty += i.qty;
+                    totalValue += (i.qty * i.price);
+                    
+                    if (!itemsGrouped[i.name]) {
+                        itemsGrouped[i.name] = { price: i.price, qty: 0, total: 0 };
+                    }
+                    itemsGrouped[i.name].qty += i.qty;
+                    itemsGrouped[i.name].total += (i.qty * i.price);
                 }
-                aggregation[key].qty += Number(item.qty);
-                aggregation[key].total += (Number(item.qty) * Number(item.price));
-                grandTotal += (Number(item.qty) * Number(item.price));
             });
         });
 
-        const topEmployee = Object.entries(employeeTotals)
-            .sort(([, a], [, b]) => b - a)[0];
+        return { totalQty, totalValue, itemsGrouped };
+    }, [sales, reportItem, reportMarket, reportStart, reportEnd]);
 
-        return { 
-            items: Object.values(aggregation), 
-            grandTotal, 
-            topEmployee: topEmployee ? { name: topEmployee[0], total: topEmployee[1] } : null 
+    const handleSaveTarget = async () => {
+        if (!targetEmployeeKey || !targetMarket || finalTarget <= 0) return alert("يرجى إكمال البيانات");
+        const employee = usersList.find(u => u.key === targetEmployeeKey);
+        if (!employee) return;
+
+        const now = new Date();
+        const currentMonth = `${now.getFullYear()}-${now.getMonth() + 1}`;
+
+        const targetData: UserTarget = {
+            userId: targetEmployeeKey,
+            employeeName: employee.name,
+            market: targetMarket,
+            suggestedAmount: suggestedTarget,
+            growthPercent: growthPercent,
+            finalTarget: finalTarget,
+            achieved: 0,
+            lastResetMonth: currentMonth
         };
+
+        await set(ref(db, `targets/${targetEmployeeKey}`), targetData);
+        alert("تم اعتماد وإضافة التارجت بنجاح");
+        setShowTargetModal(false);
     };
 
-    const monthlyRecords = getMonthlyData();
-    const monthlyStats = calculateAggregatedStats(monthlyRecords);
-    const topItems = monthlyStats.items.sort((a,b) => b.total - a.total).slice(0, 5);
-
-    // --- Export Logic ---
-    const handleExportAggregated = () => {
-        if (!statsStart || !statsEnd) return alert("يرجى تحديد فترة البداية والنهاية");
-        
-        const periodRecords = sales.filter(s => {
-            const sDate = new Date(s.timestamp);
-            const start = new Date(statsStart);
-            const end = new Date(statsEnd);
-            end.setHours(23,59,59);
-            return sDate >= start && sDate <= end && (!statsMarket || s.market === statsMarket);
-        });
-
-        const { items, grandTotal } = calculateAggregatedStats(periodRecords);
-        if (items.length === 0) return alert("لا توجد مبيعات في هذه الفترة");
-
-        const csvData = items.map(i => ({
-            "اسم الصنف": i.name,
-            "سعر القطعة": i.price,
-            "إجمالي الكمية المباعة": i.qty,
-            "إجمالي المبيعات (ج.م)": i.total
-        }));
-
-        csvData.push({
-            "اسم الصنف": "--- المجموع الكلي ---",
-            "سعر القطعة": 0,
-            "إجمالي الكمية المباعة": 0,
-            "إجمالي المبيعات (ج.م)": grandTotal
-        });
-
-        exportToCSV(csvData, `تقرير_مبيعات_تجميعي_${statsStart}_إلى_${statsEnd}`);
-    };
-
-    const handleDelete = async (id: string) => {
-        if (user.role !== 'admin') return alert("صلاحية الحذف للمسؤول فقط");
-        if (window.confirm("هل أنت متأكد من حذف هذا السجل؟")) {
-            await remove(ref(db, `sales/${id}`));
+    const loadArchive = async () => {
+        const archiveRef = ref(db, 'target_history');
+        const snap = await get(archiveRef);
+        if (snap.exists()) {
+            const data: TargetHistory[] = [];
+            snap.forEach(userSnap => {
+                userSnap.forEach(historySnap => {
+                    data.push({ id: historySnap.key!, ...historySnap.val() });
+                });
+            });
+            setArchiveData(data);
+            setShowArchiveModal(true);
+        } else {
+            alert("لا توجد سجلات أرشيفية");
         }
     };
 
-    const startEdit = (sale: SaleRecord) => {
-        if (user.role !== 'admin') return alert("صلاحية التعديل للمسؤول فقط");
-        setEditingSale(JSON.parse(JSON.stringify(sale)));
+    const copyArchiveData = () => {
+        const filtered = getFilteredArchive();
+        const text = filtered.map(h => `${h.employeeName} | الشهر: ${h.month} | التارجت: ${h.targetAmount} | المحقق: ${h.achievedAmount}`).join('\n');
+        navigator.clipboard.writeText(text);
+        alert("تم نسخ البيانات المصفاة بنجاح");
     };
 
-    const saveEdit = async () => {
+    const getFilteredArchive = () => {
+        return archiveData.filter(h => 
+            (archiveEmployee === 'all' || h.userId === archiveEmployee) &&
+            (h.month.includes(archiveSearch) || h.employeeName.includes(archiveSearch))
+        );
+    };
+
+    const handleExportCurrent = () => {
+        if (filteredSales.length === 0) return alert("لا توجد بيانات للتصدير");
+        const exportData = filteredSales.map(s => ({
+            "اسم الموظف": s.employeeName,
+            "اليوم": new Date(s.timestamp).toLocaleDateString('ar-EG', { weekday: 'long' }),
+            "التاريخ": s.date,
+            "اسم الفرع": s.market,
+            "إجمالي مبيعات اليوم": s.total.toLocaleString() + " ج.م"
+        }));
+        exportToCSV(exportData, "Current_Sales_Log");
+    };
+
+    const handleExportPeriod = () => {
+        if (!exportStart || !exportEnd) return alert("اختر الفترة الزمنية");
+        const startTS = new Date(exportStart).getTime();
+        const endTS = new Date(exportEnd).getTime() + 86400000;
+        const periodSales = sales.filter(s => s.timestamp >= startTS && s.timestamp <= endTS && (!exportMarket || s.market === exportMarket));
+        if (periodSales.length === 0) return alert("لا توجد مبيعات");
+        const exportData = periodSales.flatMap(s => (s.items || []).map(i => ({
+            "الموظف": s.employeeName, "اليوم": new Date(s.timestamp).toLocaleDateString('ar-EG', { weekday: 'long' }),
+            "التاريخ": s.date, "الماركت": s.market, "الصنف": i.name, "السعر": i.price, "الكمية": i.qty, "الإجمالي": i.price * i.qty
+        })));
+        exportToCSV(exportData, `Sales_Report_${exportStart}_to_${exportEnd}`);
+        setShowExportModal(false);
+    };
+
+    const handleExportProductSales = () => {
+        const dataRows = (Object.entries(reportResults.itemsGrouped) as [string, { price: number; qty: number; total: number }][]).map(([name, stats]) => ({
+            "اسم الصنف": name,
+            "الفترة": `من ${reportStart || 'البداية'} إلى ${reportEnd || 'الآن'}`,
+            "سعر القطعة": stats.price,
+            "الكمية المباعة": stats.qty,
+            "الإجمالي": stats.total
+        }));
+        
+        dataRows.push({
+            "اسم الصنف": "الإجمالي العام",
+            "الفترة": "",
+            "سعر القطعة": 0,
+            "الكمية المباعة": reportResults.totalQty,
+            "الإجمالي": reportResults.totalValue
+        });
+
+        exportToCSV(dataRows, `Product_Sales_Report_${reportStart}_to_${reportEnd}`);
+    };
+
+    const handleUpdateSale = async () => {
         if (!editingSale || !editingSale.id) return;
-        try {
-            await update(ref(db, `sales/${editingSale.id}`), {
-                items: editingSale.items,
-                total: editingSale.total,
-                market: editingSale.market 
-            });
-            setEditingSale(null);
-            alert("تم تعديل الفاتورة بنجاح");
-        } catch (e) { alert("حدث خطأ"); }
+        const newTotal = editingSale.items.reduce((acc, item) => acc + (item.price * item.qty), 0);
+        await update(ref(db, `sales/${editingSale.id}`), {
+            items: editingSale.items,
+            total: newTotal
+        });
+        alert("تم تحديث البيعة بنجاح");
+        setEditingSale(null);
     };
 
-    const inputClass = "border p-2.5 rounded-lg w-full text-black focus:ring-2 focus:ring-blue-500 outline-none transition";
-    
+    const updateEditingItem = (index: number, field: keyof ProductItem, value: any) => {
+        if (!editingSale) return;
+        const newItems = [...editingSale.items];
+        newItems[index] = { ...newItems[index], [field]: value };
+        setEditingSale({ ...editingSale, items: newItems });
+    };
+
+    const getStarOfMonth = () => {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+        const end = new Date(now.getFullYear(), now.getMonth(), 30).getTime();
+        const currentMonthSales = sales.filter(s => s.timestamp >= start && s.timestamp <= end);
+        const totals: Record<string, number> = {};
+        currentMonthSales.forEach(s => totals[s.employeeName] = (totals[s.employeeName] || 0) + s.total);
+        const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+        return sorted.length > 0 ? { name: sorted[0][0], total: sorted[0][1] } : null;
+    };
+
+    const star = getStarOfMonth();
+
     return (
         <div className="space-y-6">
-            {/* Header & Controls */}
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-                <h2 className="text-2xl font-bold flex items-center gap-2">
-                    <FileSpreadsheet className="text-blue-500" /> سجل المبيعات
-                </h2>
-                {user.role === 'admin' && (
-                    <div className="flex gap-2 w-full md:w-auto">
-                        <button 
-                            onClick={() => setShowStatsModal(true)}
-                            className="flex-1 md:flex-none bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 font-bold shadow-lg transition transform active:scale-95"
-                        >
-                            <Calculator size={18} /> حساب مبيعات فترة
+            <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold flex items-center gap-2 text-white"><FileSpreadsheet /> سجل المبيعات</h2>
+                <div className="flex gap-2">
+                    {user.role === 'admin' && (
+                        <button onClick={() => setShowProductSalesModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold hover:bg-blue-700 transition">
+                            <Package size={18}/> مبيعات صنف
                         </button>
-                        <button 
-                            onClick={() => {
-                                const data = filteredSales.flatMap(sale => (sale.items || []).map(item => ({
-                                    "التاريخ": sale.date, "الماركت": sale.market, "الموظف": sale.employeeName,
-                                    "الصنف": item.name, "السعر": item.price, "العدد": item.qty, "الإجمالي": (item.price * item.qty)
-                                })));
-                                exportToCSV(data, 'Full_Sales_Log');
-                            }}
-                            className="flex-1 md:flex-none bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 font-bold shadow-lg transition transform active:scale-95"
-                        >
-                            <Download size={18} /> تصدير السجل الحالي
-                        </button>
-                    </div>
-                )}
-            </div>
-
-            {/* Monthly Leaderboard */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {/* Top Employee Card */}
-                <div className={`p-5 rounded-2xl border flex flex-col justify-between ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-gradient-to-br from-blue-600 to-indigo-700 text-white border-blue-500 shadow-xl'}`}>
-                    <div className="flex justify-between items-start">
-                        <h3 className="text-sm font-bold opacity-80 uppercase tracking-widest flex items-center gap-2">
-                            <Trophy size={16} /> نجم الشهر الحالي
-                        </h3>
-                        <Star className="text-yellow-400 fill-yellow-400" size={20} />
-                    </div>
-                    <div className="mt-4">
-                        {monthlyStats.topEmployee ? (
-                            <>
-                                <div className="text-2xl font-black mb-1">{monthlyStats.topEmployee.name}</div>
-                                <div className="text-sm opacity-90">إجمالي المبيعات: <span className="font-bold">{monthlyStats.topEmployee.total.toLocaleString()} ج.م</span></div>
-                            </>
-                        ) : (
-                            <div className="text-sm opacity-60 italic">لا توجد بيانات لهذا الشهر</div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Top Items List */}
-                <div className={`lg:col-span-2 p-5 rounded-2xl border ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100 shadow-lg'}`}>
-                    <h3 className="text-xs font-bold text-gray-400 mb-4 flex items-center gap-2 uppercase tracking-widest">
-                        <TrendingUp size={16} className="text-blue-500" /> الأصناف الأكثر مبيعاً (يوم 1 - 30)
-                    </h3>
-                    <div className="flex flex-wrap gap-2">
-                        {topItems.length > 0 ? topItems.map((item, idx) => (
-                            <div key={idx} className={`px-4 py-2 rounded-xl border flex flex-col ${theme === 'dark' ? 'bg-gray-900 border-gray-700' : 'bg-blue-50 border-blue-100'}`}>
-                                <span className="text-[10px] opacity-60 truncate max-w-[120px]">{item.name}</span>
-                                <div className="flex items-center justify-between gap-4 mt-0.5">
-                                    <span className="text-xs font-bold text-blue-600">{item.total.toLocaleString()} ج.م</span>
-                                    <span className="text-[10px] bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded-md font-bold">
-                                        {item.qty} قطعة
-                                    </span>
-                                </div>
-                            </div>
-                        )) : (
-                            <div className="w-full text-center text-xs opacity-30 py-4 italic">لا توجد بيانات مبيعات حالياً</div>
-                        )}
-                    </div>
+                    )}
+                    {user.role === 'admin' && (
+                        <>
+                            <button onClick={loadArchive} className="bg-gray-700 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold hover:bg-gray-600 transition">
+                                <History size={18}/> تارجت سابق
+                            </button>
+                            <button onClick={() => setShowTargetModal(true)} className="bg-purple-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold hover:bg-purple-700 transition">
+                                <Target size={18}/> إدارة التارجت
+                            </button>
+                        </>
+                    )}
                 </div>
             </div>
+            
+            {user.role === 'admin' && (
+                <div className="flex flex-col md:flex-row gap-3">
+                    <button onClick={() => setShowExportModal(true)} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition active:scale-95"><Filter size={18}/> تصدير فترة معينة</button>
+                    <button onClick={handleExportCurrent} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition active:scale-95"><Download size={18}/> تصدير السجل الحالي</button>
+                </div>
+            )}
 
-            {/* Filters */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-black/5 p-4 rounded-2xl">
-                <div className="relative">
-                    <Calendar className="absolute left-3 top-3 opacity-30" size={18} />
-                    <input type="date" className={inputClass} value={filterDate} onChange={e => setFilterDate(e.target.value)} />
+            {star && (
+                <div className="bg-[#808080] p-6 rounded-3xl border border-white/20 shadow-2xl flex flex-col items-center justify-center space-y-2 relative overflow-hidden group">
+                    <div className="absolute -right-4 -top-4 opacity-10 group-hover:rotate-12 transition-transform duration-700"><Trophy size={120} /></div>
+                    <Star className="text-yellow-400 animate-pulse" size={32} fill="currentColor" />
+                    <h3 className="text-xl font-black text-white uppercase tracking-widest">نجم الشهر الحالي</h3>
+                    <div className="text-3xl font-black text-white">{star.name}</div>
+                    <div className="text-sm font-bold opacity-80 text-white">إجمالي مبيعات الشهر: <span className="text-green-300 font-black">{star.total.toLocaleString()} ج.م</span></div>
                 </div>
-                <div className="relative">
-                    <Search className="absolute left-3 top-3 opacity-30" size={18} />
-                    <input type="text" placeholder="بحث بالمشاركين..." className={inputClass} value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)} />
-                </div>
-                <select className={inputClass} value={filterMarket} onChange={e => setFilterMarket(e.target.value)}>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {user.role === 'admin' && <input type="date" className="p-3 rounded-xl bg-gray-700 text-white border border-white/20" value={filterDate} onChange={e => setFilterDate(e.target.value)} />}
+                <input type="text" placeholder="بحث باسم الموظف..." className="p-3 rounded-xl bg-gray-700 text-white border border-white/10 text-xs" value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)} />
+                <select className="p-3 rounded-xl bg-gray-700 text-white border border-white/20" value={filterMarket} onChange={e => setFilterMarket(e.target.value)}>
                     <option value="">كل الماركتات</option>
                     {markets.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
             </div>
 
-            {/* Sales Feed */}
             <div className="space-y-4">
                 {filteredSales.map(sale => (
-                    <div key={sale.id} className={`p-5 rounded-2xl border transition-all hover:shadow-md ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100 shadow-sm'}`}>
+                    <div key={sale.id} className="p-5 rounded-3xl border border-white/10 bg-gray-800 shadow-2xl">
                         <div className="flex justify-between items-start mb-4">
-                            <div className="flex gap-3">
-                                <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600">
-                                    <UserIcon size={20} />
-                                </div>
-                                <div>
-                                    <div className="font-bold text-lg text-blue-600 mb-0.5">{sale.market}</div>
-                                    <div className="flex items-center gap-3 text-[10px] opacity-60">
-                                        <span className="flex items-center gap-1"><Calendar size={10}/> {sale.date}</span>
-                                        <span>•</span>
-                                        <span>بواسطة: {sale.employeeName}</span>
-                                    </div>
+                            <div>
+                                <div className="font-bold text-xl text-blue-400">{sale.market}</div>
+                                <div className="flex flex-wrap items-center gap-3 text-[10px] opacity-60 font-bold mt-1 text-white">
+                                    <span className="flex items-center gap-1"><Calendar size={12}/> {new Date(sale.timestamp).toLocaleDateString('ar-EG', { weekday: 'long' })} - {sale.date}</span>
+                                    <span className="flex items-center gap-1"><UserIcon size={12}/> {sale.employeeName}</span>
+                                    <span className="bg-white/10 px-2 py-0.5 rounded text-[9px] uppercase">{(sale as any).username || "System"}</span>
                                 </div>
                             </div>
-                            {user.role === 'admin' && (
-                                <div className="flex gap-1">
-                                    <button onClick={() => startEdit(sale)} className="p-2 text-indigo-500 hover:bg-indigo-50 rounded-lg transition"><Edit size={16} /></button>
-                                    <button onClick={() => handleDelete(sale.id!)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition"><Trash2 size={16} /></button>
-                                </div>
-                            )}
+                            <div className="flex gap-2">
+                            </div>
                         </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-xs text-center border-t border-gray-100 dark:border-gray-800 mt-2 pt-2">
-                                <thead className="opacity-40">
-                                    <tr>
-                                        <th className="text-right py-2">الصنف</th>
-                                        <th className="py-2">السعر</th>
-                                        <th className="py-2">العدد</th>
-                                        <th className="py-2">المجموع</th>
-                                    </tr>
+                        <div className="overflow-hidden rounded-2xl bg-black/20 border border-white/5">
+                            <table className="w-full text-[11px] text-center">
+                                <thead className="bg-white/5 text-white/50">
+                                    <tr><th className="py-2 px-3 text-right text-white">الصنف</th><th className="py-2 text-white">السعر</th><th className="py-2 text-white">الكمية</th><th className="py-2 px-3 text-white">المجموع</th></tr>
                                 </thead>
                                 <tbody>
                                     {(sale.items || []).map((item, idx) => (
-                                        <tr key={idx} className="border-b border-gray-500/5">
-                                            <td className="py-2 text-right font-medium">{item.name}</td>
-                                            <td>{item.price}</td>
-                                            <td>{item.qty}</td>
-                                            <td className="font-bold opacity-60">{(item.price * item.qty).toLocaleString()}</td>
-                                        </tr>
+                                        <tr key={idx} className="border-t border-white/5 text-white"><td className="py-2 px-3 text-right font-bold">{item.name}</td><td className="py-2">{item.price}</td><td className="py-2 font-black">{item.qty}</td><td className="py-2 px-3 text-green-400 font-black">{(item.qty * item.price).toLocaleString()}</td></tr>
                                     ))}
                                 </tbody>
-                                <tfoot>
-                                    <tr className="font-bold">
-                                        <td colSpan={3} className="pt-3 text-left pl-4 opacity-50">الإجمالي:</td>
-                                        <td className="pt-3 text-green-600 text-sm">{sale.total.toLocaleString()} ج.م</td>
-                                    </tr>
-                                </tfoot>
                             </table>
+                        </div>
+                        <div className="mt-4 pt-4 border-t border-white/10 flex justify-between items-center text-white">
+                            <div className="flex flex-col">
+                                <span className="text-xs font-bold opacity-60 uppercase tracking-tighter">إجمالي الفاتورة:</span>
+                                <span className="text-xl font-black text-blue-400">{sale.total.toLocaleString()} ج.م</span>
+                            </div>
+                            {user.role === 'admin' && (
+                                <div className="flex gap-2">
+                                    <button onClick={() => setEditingSale(sale)} className="bg-indigo-600/20 text-indigo-400 p-2.5 rounded-xl border border-indigo-500/30 hover:bg-indigo-600 hover:text-white transition shadow-lg flex items-center gap-2 text-xs font-bold">
+                                        <Edit size={16}/> تعديل
+                                    </button>
+                                    <button onClick={() => { if(confirm("هل أنت متأكد من حذف هذه العملية؟")) remove(ref(db, `sales/${sale.id!}`)); }} className="bg-red-600/20 text-red-500 p-2.5 rounded-xl border border-red-500/30 hover:bg-red-600 hover:text-white transition shadow-lg flex items-center gap-2 text-xs font-bold">
+                                        <Trash2 size={16}/> حذف
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 ))}
             </div>
 
-            {/* Modal: Period Statistics (Aggregated) */}
-            {showStatsModal && user.role === 'admin' && (
-                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-md">
-                    <div className={`w-full max-w-lg rounded-3xl shadow-2xl p-8 border ${theme === 'dark' ? 'bg-gray-900 text-white border-gray-800' : 'bg-white text-black border-gray-100'}`}>
+            {/* مودال تعديل البيعة */}
+            {editingSale && (
+                <div className="fixed inset-0 z-[500] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+                    <div className="bg-gray-900 border border-white/20 w-full max-w-2xl rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh]">
                         <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-bold flex items-center gap-2 text-indigo-600">
-                                <Calculator size={24} /> حساب مبيعات فترة معينة
-                            </h3>
-                            <button onClick={() => setShowStatsModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition"><X /></button>
+                            <h3 className="font-bold text-xl text-white flex items-center gap-2"><Edit className="text-indigo-500"/> تعديل تفاصيل المبيعات</h3>
+                            <button onClick={() => setEditingSale(null)} className="text-white/50 hover:text-white"><X size={20}/></button>
                         </div>
-                        
-                        <div className="space-y-5">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block mb-1.5 text-xs font-bold opacity-60">تاريخ البداية</label>
-                                    <input type="date" className={inputClass} value={statsStart} onChange={e => setStatsStart(e.target.value)} />
+                        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pr-1">
+                            {editingSale.items.map((item, idx) => (
+                                <div key={idx} className="bg-black/20 p-4 rounded-2xl border border-white/5 space-y-3">
+                                    <input 
+                                        type="text" 
+                                        className="w-full bg-gray-800 text-white p-3 rounded-xl border border-white/10 text-xs font-bold"
+                                        value={item.name}
+                                        onChange={e => updateEditingItem(idx, 'name', e.target.value)}
+                                        placeholder="اسم الصنف"
+                                    />
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[10px] font-black opacity-40 uppercase mb-1 text-white">السعر</label>
+                                            <input 
+                                                type="number" 
+                                                className="w-full bg-gray-800 text-white p-3 rounded-xl border border-white/10 text-center font-black"
+                                                value={item.price}
+                                                onChange={e => updateEditingItem(idx, 'price', parseFloat(e.target.value) || 0)}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black opacity-40 uppercase mb-1 text-white">الكمية</label>
+                                            <input 
+                                                type="number" 
+                                                className="w-full bg-gray-800 text-white p-3 rounded-xl border border-white/10 text-center font-black"
+                                                value={item.qty}
+                                                onChange={e => updateEditingItem(idx, 'qty', parseFloat(e.target.value) || 0)}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="text-left text-xs font-bold text-green-400">
+                                        المجموع: {(item.price * item.qty).toLocaleString()} ج.م
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block mb-1.5 text-xs font-bold opacity-60">تاريخ النهاية</label>
-                                    <input type="date" className={inputClass} value={statsEnd} onChange={e => setStatsEnd(e.target.value)} />
+                            ))}
+                        </div>
+                        <div className="mt-6 border-t border-white/10 pt-4 flex justify-between items-center">
+                            <div className="text-white">
+                                <div className="text-[10px] font-black opacity-40 uppercase">إجمالي البيعة الجديد</div>
+                                <div className="text-2xl font-black text-blue-400">
+                                    {editingSale.items.reduce((acc, i) => acc + (i.price * i.qty), 0).toLocaleString()} ج.م
                                 </div>
                             </div>
-                            <div>
-                                <label className="block mb-1.5 text-xs font-bold opacity-60">اختيار الماركت (اختياري)</label>
-                                <select className={inputClass} value={statsMarket} onChange={e => setStatsMarket(e.target.value)}>
-                                    <option value="">جميع الماركتات</option>
-                                    {markets.map(m => <option key={m} value={m}>{m}</option>)}
-                                </select>
-                            </div>
-
-                            <button 
-                                onClick={handleExportAggregated}
-                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-xl flex items-center justify-center gap-3 transition transform active:scale-95 mt-4"
-                            >
-                                <FileSpreadsheet size={22} /> تحميل تقرير مجمع (Excel)
+                            <button onClick={handleUpdateSale} className="bg-indigo-600 text-white font-bold py-3 px-8 rounded-2xl shadow-xl active:scale-[0.98] transition flex items-center gap-2">
+                                <Save size={18}/> حفظ التعديلات
                             </button>
-                            <p className="text-[10px] text-center opacity-40 leading-relaxed">
-                                سيحتوي ملف الإكسيل على تجميع لكل صنف تم بيعه خلال الفترة، موضحاً الكميات الإجمالية وأسعار القطع والمجاميع النهائية.
-                            </p>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Edit Modal (Admin Only) */}
-            {editingSale && user.role === 'admin' && (
-                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 overflow-y-auto backdrop-blur-sm">
-                    <div className={`w-full max-w-2xl rounded-3xl shadow-2xl p-6 ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-white text-black'}`}>
-                        <div className="flex justify-between items-center mb-6 border-b pb-4">
-                            <h3 className="text-xl font-bold">تعديل فاتورة - {editingSale.market}</h3>
-                            <button onClick={() => setEditingSale(null)} className="p-2 hover:bg-red-50 text-gray-500 hover:text-red-500 rounded-full transition"><X /></button>
+            {/* مودال إدارة التارجت */}
+            {showTargetModal && (
+                <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                    <div className="bg-gray-900 border border-white/20 w-full max-w-lg rounded-3xl p-6 shadow-2xl animate-in zoom-in-95">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-bold text-xl text-white flex items-center gap-2"><Target className="text-purple-500"/> إدارة التارجت الذكي</h3>
+                            <button onClick={() => setShowTargetModal(false)} className="text-white/50 hover:text-white"><X size={20}/></button>
+                        </div>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-[10px] font-black opacity-40 uppercase mb-1 text-white">اختر الفرع</label>
+                                <select className="w-full p-4 rounded-2xl bg-[#808080] text-white border border-white/10 font-bold" value={targetMarket} onChange={e => setTargetMarket(e.target.value)}>
+                                    <option value="">-- اختر الفرع --</option>
+                                    {markets.map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black opacity-40 uppercase mb-1 text-white">الموظف</label>
+                                <select className="w-full p-4 rounded-2xl bg-[#808080] text-white border border-white/10 font-bold" value={targetEmployeeKey} onChange={e => setTargetEmployeeKey(e.target.value)}>
+                                    <option value="">-- اختر الموظف --</option>
+                                    {usersList.map(u => <option key={u.key} value={u.key}>{u.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-[10px] font-black opacity-40 uppercase mb-1 text-white">التارجت المقترح (محقق الشهر)</label>
+                                    <div className="p-4 rounded-2xl bg-black/40 text-blue-400 font-black text-lg border border-white/5">{suggestedTarget.toLocaleString()}</div>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black opacity-40 uppercase mb-1 text-white">نسبة النمو %</label>
+                                    <input type="number" className="w-full p-4 rounded-2xl bg-gray-800 text-white border border-white/20 font-black text-lg" value={growthPercent} onChange={e => setGrowthPercent(parseFloat(e.target.value) || 0)} />
+                                </div>
+                            </div>
+                            <div className="bg-purple-600/10 border border-purple-500/30 p-4 rounded-2xl">
+                                <label className="block text-[10px] font-black opacity-60 uppercase mb-1 text-purple-400">التارجت النهائي المعتمد</label>
+                                <div className="text-3xl font-black text-white">{finalTarget.toLocaleString()} <span className="text-sm">ج.م</span></div>
+                            </div>
+                            <button onClick={handleSaveTarget} className="w-full bg-purple-600 text-white font-bold py-4 rounded-2xl shadow-xl transition active:scale-95 flex items-center justify-center gap-2 mt-2">
+                                <Save size={20}/> اعتماد وإضافة التارجت
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showArchiveModal && (
+                <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                    <div className="bg-gray-900 border border-white/20 w-full max-w-2xl rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-bold text-xl text-white flex items-center gap-2"><History className="text-blue-500"/> أرشيف التارجت</h3>
+                            <button onClick={() => setShowArchiveModal(false)} className="text-white/50 hover:text-white"><X size={20}/></button>
                         </div>
                         
-                        <div className="max-h-[50vh] overflow-y-auto space-y-3 mb-6 px-1 custom-scrollbar">
-                            {editingSale.items.map((item, idx) => (
-                                <div key={idx} className="grid grid-cols-12 gap-3 items-center bg-black/5 p-3 rounded-xl border border-transparent hover:border-blue-500/30 transition">
-                                    <div className="col-span-5 text-sm font-bold truncate">{item.name}</div>
-                                    <div className="col-span-3">
-                                        <input type="number" value={item.price} onChange={e => {
-                                            const items = [...editingSale.items];
-                                            items[idx].price = Number(e.target.value);
-                                            const total = items.reduce((s,i) => s + (i.price * i.qty), 0);
-                                            setEditingSale({...editingSale, items, total});
-                                        }} className="w-full p-2 border rounded-lg text-black text-center text-sm" />
+                        <div className="flex gap-2 mb-4">
+                            <div className="flex-1 relative">
+                                <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30" size={16}/>
+                                <input type="text" placeholder="بحث بالشهر أو الاسم..." className="w-full pr-10 p-3 rounded-xl bg-gray-800 text-white border border-white/10 text-xs" value={archiveSearch} onChange={e => setArchiveSearch(e.target.value)} />
+                            </div>
+                            <select className="p-3 rounded-xl bg-[#808080] text-white border border-white/10 text-xs font-bold" value={archiveEmployee} onChange={e => setArchiveEmployee(e.target.value)}>
+                                <option value="all">كل الموظفين</option>
+                                {usersList.map(u => <option key={u.key} value={u.key}>{u.name}</option>)}
+                            </select>
+                            <button onClick={copyArchiveData} className="bg-blue-600 p-3 rounded-xl text-white hover:bg-blue-500 transition" title="نسخ البيانات">
+                                <Copy size={18}/>
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3">
+                            {getFilteredArchive().map(h => (
+                                <div key={h.id} className="p-4 rounded-2xl border border-white/5 bg-black/20 flex justify-between items-center">
+                                    <div>
+                                        <div className="font-bold text-sm text-blue-400">{h.employeeName}</div>
+                                        <div className="text-[10px] opacity-40 uppercase tracking-widest">{h.month}</div>
                                     </div>
-                                    <div className="col-span-2">
-                                        <input type="number" value={item.qty} onChange={e => {
-                                            const items = [...editingSale.items];
-                                            items[idx].qty = Number(e.target.value);
-                                            const total = items.reduce((s,i) => s + (i.price * i.qty), 0);
-                                            setEditingSale({...editingSale, items, total});
-                                        }} className="w-full p-2 border rounded-lg text-black text-center text-sm" />
-                                    </div>
-                                    <div className="col-span-2 text-center text-xs font-bold opacity-60">
-                                        {(item.price * item.qty).toLocaleString()}
+                                    <div className="text-left">
+                                        <div className="text-[10px] font-bold opacity-40 uppercase">التارجت: {h.targetAmount.toLocaleString()}</div>
+                                        <div className={`text-lg font-black ${h.achievedAmount >= h.targetAmount ? 'text-green-400' : 'text-orange-400'}`}>
+                                            المحقق: {h.achievedAmount.toLocaleString()}
+                                        </div>
                                     </div>
                                 </div>
                             ))}
                         </div>
-
-                        <div className="flex justify-between items-center pt-5 border-t">
-                             <div className="font-bold text-xl">
-                                الإجمالي: <span className="text-green-600">{editingSale.total.toLocaleString()} ج.م</span>
-                             </div>
-                             <div className="flex gap-2">
-                                <button onClick={() => setEditingSale(null)} className="px-6 py-2.5 bg-gray-200 text-black rounded-xl hover:bg-gray-300 font-bold transition">إلغاء</button>
-                                <button onClick={saveEdit} className="px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold flex items-center gap-2 transition shadow-lg"><Save size={18}/> حفظ التعديل</button>
-                             </div>
-                        </div>
                     </div>
                 </div>
+            )}
+
+            {showProductSalesModal && (
+                <div className="fixed inset-0 z-[400] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                    <div className="bg-gray-900 border border-white/20 w-full max-w-2xl rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[95vh]">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-bold text-xl text-white flex items-center gap-2"><Package className="text-blue-500"/> تقرير مبيعات الأصناف</h3>
+                            <button onClick={() => setShowProductSalesModal(false)} className="text-white/50 hover:text-white"><X size={20}/></button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                            <div>
+                                <label className="block text-[10px] font-black opacity-40 uppercase mb-1 text-white">الأصناف</label>
+                                <select className="w-full p-3 rounded-xl bg-[#808080] text-white border border-white/10 text-xs font-bold" value={reportItem} onChange={e => setReportItem(e.target.value)}>
+                                    <option value="all">كل الأصناف</option>
+                                    {uniqueItems.map(name => <option key={name} value={name}>{name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black opacity-40 uppercase mb-1 text-white">الماركت</label>
+                                <select className="w-full p-3 rounded-xl bg-[#808080] text-white border border-white/10 text-xs font-bold" value={reportMarket} onChange={e => setReportMarket(e.target.value)}>
+                                    <option value="all">كل الماركتات المسجلة</option>
+                                    {marketsWithSales.map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black opacity-40 uppercase mb-1 text-white">من تاريخ</label>
+                                <input type="date" className="w-full p-3 rounded-xl bg-gray-800 text-white border border-white/10 text-xs" value={reportStart} onChange={e => setReportStart(e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black opacity-40 uppercase mb-1 text-white">إلى تاريخ</label>
+                                <input type="date" className="w-full p-3 rounded-xl bg-gray-800 text-white border border-white/10 text-xs" value={reportEnd} onChange={e => setReportEnd(e.target.value)} />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 mb-6">
+                            <div className="bg-blue-600/10 border border-blue-500/30 p-4 rounded-2xl flex items-center gap-3">
+                                <ShoppingBag className="text-blue-400" size={24}/>
+                                <div>
+                                    <div className="text-[10px] font-black opacity-40 uppercase text-white">الكمية المباعة</div>
+                                    <div className="text-xl font-black text-white">{reportResults.totalQty.toLocaleString()} <span className="text-[10px] opacity-60">قطعة</span></div>
+                                </div>
+                            </div>
+                            <div className="bg-green-600/10 border border-green-500/30 p-4 rounded-2xl flex items-center gap-3">
+                                <Calculator className="text-green-400" size={24}/>
+                                <div>
+                                    <div className="text-[10px] font-black opacity-40 uppercase text-white">القيمة الإجمالية</div>
+                                    <div className="text-xl font-black text-white">{reportResults.totalValue.toLocaleString()} <span className="text-[10px] opacity-60">ج.م</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto custom-scrollbar border border-white/5 rounded-2xl bg-black/20 p-2">
+                             <table className="w-full text-[10px] text-center">
+                                <thead className="bg-white/5 text-white/50">
+                                    <tr>
+                                        <th className="py-2 px-2 text-right text-white">اسم الصنف</th>
+                                        <th className="py-2 text-white">سعر القطعة</th>
+                                        <th className="py-2 text-white">الكمية</th>
+                                        <th className="py-2 px-2 text-white">الإجمالي</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {(Object.entries(reportResults.itemsGrouped) as [string, { price: number; qty: number; total: number }][]).map(([name, stats], idx) => (
+                                        <tr key={idx} className="border-t border-white/5 text-white">
+                                            <td className="py-2 px-2 text-right font-bold truncate max-w-[150px]">{name}</td>
+                                            <td className="py-2">{stats.price.toLocaleString()}</td>
+                                            <td className="py-2 font-black">{stats.qty.toLocaleString()}</td>
+                                            <td className="py-2 px-2 text-green-400 font-black">{stats.total.toLocaleString()}</td>
+                                        </tr>
+                                    ))}
+                                    {Object.keys(reportResults.itemsGrouped).length > 0 && (
+                                        <tr className="border-t-2 border-white/20 bg-white/5 font-black text-white">
+                                            <td className="py-3 px-2 text-right uppercase tracking-widest" colSpan={3}>الإجمالي العام</td>
+                                            <td className="py-3 px-2 text-green-400 text-sm">{reportResults.totalValue.toLocaleString()}</td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                             </table>
+                        </div>
+
+                        {reportItem === 'all' && Object.keys(reportResults.itemsGrouped).length > 0 && (
+                            <button 
+                                onClick={handleExportProductSales}
+                                className="w-full bg-green-600 text-white font-bold py-4 rounded-2xl shadow-xl transition active:scale-95 flex items-center justify-center gap-2 mt-4"
+                            >
+                                <FileSpreadsheet size={20}/> تصدير ملف إكسيل
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {showExportModal && (
+              <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                <div className="bg-gray-900 border border-white/10 w-full max-w-md rounded-3xl p-6 shadow-2xl">
+                  <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg text-white">تصدير مبيعات فترة زمنية</h3><button onClick={() => setShowExportModal(false)} className="text-white/50 hover:text-white"><X size={20}/></button></div>
+                  <div className="space-y-4">
+                    <div><label className="block text-xs font-bold mb-1 opacity-60 text-white">تاريخ البداية</label><input type="date" className="w-full p-3 rounded-xl bg-gray-800 text-white border border-white/10" value={exportStart} onChange={e => setExportStart(e.target.value)} /></div>
+                    <div><label className="block text-xs font-bold mb-1 opacity-60 text-white">تاريخ النهاية</label><input type="date" className="w-full p-3 rounded-xl bg-gray-800 text-white border border-white/10" value={exportEnd} onChange={e => setExportEnd(e.target.value)} /></div>
+                    <div><label className="block text-xs font-bold mb-1 opacity-60 text-white">الماركت (اختياري)</label><select className="w-full p-3 rounded-xl bg-gray-800 text-white border border-white/10" value={exportMarket} onChange={e => setExportMarket(e.target.value)}><option value="">كل الماركتات</option>{markets.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
+                    <button onClick={handleExportPeriod} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-xl transition active:scale-95">بدء التحميل (Excel)</button>
+                  </div>
+                </div>
+              </div>
             )}
         </div>
     );
