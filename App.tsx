@@ -60,10 +60,16 @@ const App: React.FC = () => {
     onValue(productsRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
-        const prods = Object.keys(data).map(key => ({
-          id: key,
-          ...data[key]
-        }));
+        const prods = Object.keys(data).map(key => {
+          const item = data[key];
+          let name = typeof item === 'string' ? item : item?.name || '';
+          if (typeof name === 'object' && name !== null) name = name.name || String(name);
+          return {
+            id: key,
+            name: String(name),
+            category: item?.category || 'Uncategorized'
+          };
+        });
         setProducts(prods);
       } else {
         // Initialize from constants if empty
@@ -91,9 +97,18 @@ const App: React.FC = () => {
 
     onValue(marketsRef, (snapshot) => {
       const systemMarkets = INITIAL_MARKETS.map(name => ({ name, createdBy: 'system' }));
-      const dbMarkets = snapshot.exists() ? Object.values(snapshot.val()).map((m: any) => 
-        typeof m === 'string' ? { name: m, createdBy: 'system' } : m
-      ) : [];
+      const dbMarkets = snapshot.exists() ? Object.values(snapshot.val()).map((m: any) => {
+        if (typeof m === 'string') return { name: m, createdBy: 'system' };
+        if (m && typeof m === 'object') {
+            let extractedName = m.name;
+            if (typeof extractedName === 'object' && extractedName !== null) {
+                extractedName = extractedName.name || String(extractedName);
+            }
+            return { name: extractedName, createdBy: m.createdBy || 'system' };
+        }
+        return { name: String(m), createdBy: 'system' };
+      }) : [];
+
       const allCombined = [...systemMarkets, ...dbMarkets];
 
       if (user) {
@@ -103,7 +118,7 @@ const App: React.FC = () => {
         } else {
           filtered = allCombined.filter(m => m.createdBy === 'system' || m.createdBy === user.username);
         }
-        const uniqueNames = Array.from(new Set(filtered.map(m => m.name)));
+        const uniqueNames = Array.from(new Set(filtered.map(m => m.name).filter(n => typeof n === 'string' && n !== '[object Object]')));
         setMarkets(uniqueNames);
       }
     }, { onlyOnce: false });

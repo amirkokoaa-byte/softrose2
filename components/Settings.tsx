@@ -46,6 +46,12 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
     const [roleModal, setRoleModal] = useState<User | null>(null);
     const [newPass, setNewPass] = useState('');
     const [notifMsg, setNotifMsg] = useState('');
+    
+    // Company and Market Management
+    const [newCompanyName, setNewCompanyName] = useState('');
+    const [newMarketName, setNewMarketName] = useState('');
+    const [editCompanyModal, setEditCompanyModal] = useState<{key: string, name: string} | null>(null);
+    const [editMarketModal, setEditMarketModal] = useState<{key: string, name: string} | null>(null);
 
     useEffect(() => {
         setLocalSettings(settings);
@@ -67,11 +73,20 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 const m: any[] = [];
                 snapshot.forEach(c => { 
                     const data = c.val();
-                    m.push({
-                        key: c.key, 
-                        name: typeof data === 'string' ? data : data.name,
-                        createdBy: typeof data === 'string' ? 'System' : data.createdBy
-                    });
+                    let extractedName = data;
+                    if (data && typeof data === 'object') {
+                        extractedName = data.name;
+                        if (typeof extractedName === 'object' && extractedName !== null) {
+                            extractedName = extractedName.name || String(extractedName);
+                        }
+                    }
+                    if (typeof extractedName === 'string' && extractedName !== '[object Object]') {
+                        m.push({
+                            key: c.key, 
+                            name: extractedName,
+                            createdBy: typeof data === 'string' ? 'System' : data.createdBy
+                        });
+                    }
                 });
                 setMarketList(m);
             }
@@ -79,16 +94,25 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
 
         onValue(ref(db, 'settings/companies'), snapshot => {
             if(snapshot.exists()){
-                const c: any[] = [];
+                const cArr: any[] = [];
                 snapshot.forEach(k => { 
                     const data = k.val();
-                    c.push({
-                        key: k.key, 
-                        name: typeof data === 'string' ? data : data.name,
-                        createdBy: typeof data === 'string' ? 'System' : data.createdBy
-                    });
+                    let extractedName = data;
+                    if (data && typeof data === 'object') {
+                        extractedName = data.name;
+                        if (typeof extractedName === 'object' && extractedName !== null) {
+                            extractedName = extractedName.name || String(extractedName);
+                        }
+                    }
+                    if (typeof extractedName === 'string' && extractedName !== '[object Object]') {
+                        cArr.push({
+                            key: k.key, 
+                            name: extractedName,
+                            createdBy: typeof data === 'string' ? 'System' : data.createdBy
+                        });
+                    }
                 });
-                setCompanyList(c);
+                setCompanyList(cArr);
             }
         });
     }, [user.role]);
@@ -181,7 +205,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
     };
 
     const handleDeleteMarket = async (key: string) => {
-        if (confirm("هل أنت متأكد من حذف هذا الماركت؟")) {
+        if (confirm("هل أنت متأكد من حذف هذا السوق؟")) {
             await remove(ref(db, `settings/markets/${key}`));
         }
     };
@@ -190,6 +214,42 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
         if (confirm("هل أنت متأكد من حذف هذه الشركة؟")) {
             await remove(ref(db, `settings/companies/${key}`));
         }
+    };
+
+    const handleAddCompany = async () => {
+        if (!newCompanyName.trim()) return;
+        await push(ref(db, 'settings/companies'), {
+            name: newCompanyName.trim(),
+            createdBy: 'system'
+        });
+        setNewCompanyName('');
+    };
+
+    const handleAddMarket = async () => {
+        if (!newMarketName.trim()) return;
+        await push(ref(db, 'settings/markets'), {
+            name: newMarketName.trim(),
+            createdBy: 'system'
+        });
+        setNewMarketName('');
+    };
+
+    const handleUpdateCompany = async () => {
+        if (!editCompanyModal || !editCompanyModal.name.trim()) return;
+        await update(ref(db, `settings/companies/${editCompanyModal.key}`), {
+            name: editCompanyModal.name.trim(),
+            createdBy: 'system'
+        });
+        setEditCompanyModal(null);
+    };
+
+    const handleUpdateMarket = async () => {
+        if (!editMarketModal || !editMarketModal.name.trim()) return;
+        await update(ref(db, `settings/markets/${editMarketModal.key}`), {
+            name: editMarketModal.name.trim(),
+            createdBy: 'system'
+        });
+        setEditMarketModal(null);
     };
 
     const handleExportData = async () => {
@@ -360,13 +420,32 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <h4 className="font-bold mb-4 text-white flex items-center gap-2"><Building2 size={16}/> الشركات المسجلة</h4>
+                        <div className="flex gap-2 mb-4">
+                            <input 
+                                className={inputClass} 
+                                placeholder="اسم الشركة الجديدة" 
+                                value={newCompanyName} 
+                                onChange={e => setNewCompanyName(e.target.value)} 
+                            />
+                            <button 
+                                onClick={handleAddCompany} 
+                                className="bg-green-600 hover:bg-green-700 text-white px-4 rounded-lg font-bold flex items-center justify-center transition"
+                            >
+                                <Plus size={20} />
+                            </button>
+                        </div>
                         <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
                             {companyList.map(c => (
                                 <div key={c.key} className="flex justify-between items-center bg-gray-700/50 p-3 rounded-xl border border-gray-600">
                                     <span className="font-bold text-white">{c.name}</span>
-                                    <button onClick={() => handleDeleteCompany(c.key)} className="text-red-400 hover:bg-red-400/10 p-2 rounded-lg transition">
-                                        <Trash2 size={16}/>
-                                    </button>
+                                    <div className="flex gap-1">
+                                        <button onClick={() => setEditCompanyModal(c)} className="text-blue-400 hover:bg-blue-400/10 p-2 rounded-lg transition">
+                                            <Edit2 size={16}/>
+                                        </button>
+                                        <button onClick={() => handleDeleteCompany(c.key)} className="text-red-400 hover:bg-red-400/10 p-2 rounded-lg transition">
+                                            <Trash2 size={16}/>
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                             {companyList.length === 0 && <div className="text-center opacity-50 text-sm py-4">لا توجد شركات مسجلة</div>}
@@ -374,13 +453,32 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                     </div>
                     <div>
                         <h4 className="font-bold mb-4 text-white flex items-center gap-2"><MapPin size={16}/> الأسواق المسجلة</h4>
+                        <div className="flex gap-2 mb-4">
+                            <input 
+                                className={inputClass} 
+                                placeholder="اسم السوق الجديد" 
+                                value={newMarketName} 
+                                onChange={e => setNewMarketName(e.target.value)} 
+                            />
+                            <button 
+                                onClick={handleAddMarket} 
+                                className="bg-green-600 hover:bg-green-700 text-white px-4 rounded-lg font-bold flex items-center justify-center transition"
+                            >
+                                <Plus size={20} />
+                            </button>
+                        </div>
                         <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
                             {marketList.map(m => (
                                 <div key={m.key} className="flex justify-between items-center bg-gray-700/50 p-3 rounded-xl border border-gray-600">
                                     <span className="font-bold text-white">{m.name}</span>
-                                    <button onClick={() => handleDeleteMarket(m.key)} className="text-red-400 hover:bg-red-400/10 p-2 rounded-lg transition">
-                                        <Trash2 size={16}/>
-                                    </button>
+                                    <div className="flex gap-1">
+                                        <button onClick={() => setEditMarketModal(m)} className="text-blue-400 hover:bg-blue-400/10 p-2 rounded-lg transition">
+                                            <Edit2 size={16}/>
+                                        </button>
+                                        <button onClick={() => handleDeleteMarket(m.key)} className="text-red-400 hover:bg-red-400/10 p-2 rounded-lg transition">
+                                            <Trash2 size={16}/>
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                             {marketList.length === 0 && <div className="text-center opacity-50 text-sm py-4">لا توجد أسواق مسجلة</div>}
@@ -538,6 +636,44 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                                 <Send size={16}/> إرسال الآن
                             </button>
                             <button onClick={() => setNotifModal(null)} className="flex-1 bg-white/5 text-white py-2 rounded-lg">إلغاء</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {editCompanyModal && (
+                <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black/80 flex items-center justify-center p-4 overflow-y-auto">
+                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-sm my-auto">
+                        <h4 className="font-bold mb-4 text-white">تعديل اسم الشركة</h4>
+                        <input 
+                            type="text" 
+                            className={inputClass} 
+                            placeholder="اسم الشركة"
+                            value={editCompanyModal.name}
+                            onChange={e => setEditCompanyModal({...editCompanyModal, name: e.target.value})}
+                        />
+                        <div className="flex gap-2 mt-4">
+                            <button onClick={handleUpdateCompany} className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold">تحديث</button>
+                            <button onClick={() => setEditCompanyModal(null)} className="flex-1 bg-white/5 text-white py-2 rounded-lg">إلغاء</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {editMarketModal && (
+                <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black/80 flex items-center justify-center p-4 overflow-y-auto">
+                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-sm my-auto">
+                        <h4 className="font-bold mb-4 text-white">تعديل اسم السوق</h4>
+                        <input 
+                            type="text" 
+                            className={inputClass} 
+                            placeholder="اسم السوق"
+                            value={editMarketModal.name}
+                            onChange={e => setEditMarketModal({...editMarketModal, name: e.target.value})}
+                        />
+                        <div className="flex gap-2 mt-4">
+                            <button onClick={handleUpdateMarket} className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold">تحديث</button>
+                            <button onClick={() => setEditMarketModal(null)} className="flex-1 bg-white/5 text-white py-2 rounded-lg">إلغاء</button>
                         </div>
                     </div>
                 </div>

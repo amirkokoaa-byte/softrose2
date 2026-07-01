@@ -22,6 +22,14 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
     const [editingItemId, setEditingItemId] = useState<string | null>(null);
     const [tempName, setTempName] = useState('');
 
+    const handleAddMarket = async () => {
+        const newMarket = prompt("أدخل اسم الماركت الجديد:");
+        if (newMarket && newMarket.trim()) {
+            await push(ref(db, 'settings/markets'), { name: newMarket.trim(), createdBy: 'system' });
+            alert("تم إضافة الماركت بنجاح");
+        }
+    };
+
     useEffect(() => {
         setSalesItems(prev => {
             return products.map(p => {
@@ -49,7 +57,7 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
                     const now = new Date();
                     const currentMonth = `${now.getFullYear()}-${now.getMonth() + 1}`;
                     
-                    if (data.lastResetMonth !== currentMonth) {
+                    if (data.lastResetMonth !== currentMonth && data.employeeName !== 'Malak' && data.employeeName !== 'ملك') {
                         const historyRef = ref(db, `target_history/${user.key}`);
                         push(historyRef, {
                             userId: data.userId,
@@ -79,11 +87,9 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
 
     const deleteItem = async (id: string) => {
         if (confirm("هل تريد حذف هذا الصنف من القائمة الحالية؟")) {
+            setSalesItems(prev => prev.filter(i => i.id !== id));
             if (user.role === 'admin') {
                 await remove(ref(db, `products/${id}`));
-                setSalesItems(prev => prev.filter(i => i.id !== id));
-            } else {
-                setSalesItems(prev => prev.filter(i => i.id !== id));
             }
         }
     };
@@ -95,10 +101,11 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
 
     const saveName = async (id: string) => {
         if (!tempName.trim()) return;
-        // Update in Firebase
-        await update(ref(db, `products/${id}`), { name: tempName });
-        setSalesItems(prev => prev.map(i => i.id === id ? { ...i, name: tempName } : i));
+        const newName = tempName;
+        setSalesItems(prev => prev.map(i => i.id === id ? { ...i, name: newName } : i));
         setEditingItemId(null);
+        // Update in Firebase
+        await update(ref(db, `products/${id}`), { name: newName });
     };
 
     const addCustomItem = async (category: string) => {
@@ -111,8 +118,11 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
 
     const currentTotal = salesItems.reduce((sum, item) => sum + ((item.price || 0) * (item.qty || 0)), 0);
 
+    const activeAchieved = (Number(userTarget?.achieved) || 0) + currentTotal;
+    const remaining = userTarget ? Math.max(0, Number(userTarget.finalTarget) - activeAchieved) : 0;
+    const progressPercent = userTarget ? Math.min(100, Math.round((activeAchieved / Number(userTarget.finalTarget)) * 100)) : 0;
+
     const handleSave = async () => {
-        if (!selectedMarket) return alert("اختر الماركت");
         const sold = salesItems.filter(i => i.qty > 0 && i.price > 0);
         if (!sold.length) return alert("أدخل بيانات صحيحة");
 
@@ -128,16 +138,13 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
 
         if (user.key && userTarget) {
             const targetRef = ref(db, `targets/${user.key}`);
-            const newAchieved = (userTarget.achieved || 0) + currentTotal;
+            const newAchieved = (Number(userTarget.achieved) || 0) + currentTotal;
             await update(targetRef, { achieved: newAchieved });
         }
 
         alert("تم الحفظ بنجاح");
         setSalesItems(prev => prev.map(i => ({...i, price: 0, qty: 0})));
     };
-
-    const remaining = userTarget ? Math.max(0, userTarget.finalTarget - userTarget.achieved) : 0;
-    const progressPercent = userTarget ? Math.min(100, Math.round((userTarget.achieved / userTarget.finalTarget) * 100)) : 0;
 
     return (
         <div className="space-y-6 pb-20">
@@ -194,10 +201,20 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
                 </div>
             </div>
 
-            <select className="w-full p-4 rounded-2xl bg-gray-800 text-white border border-white/10" value={selectedMarket} onChange={e => setSelectedMarket(e.target.value)}>
-                <option value="">اختر الماركت من القائمة...</option>
-                {markets.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
+            <div className="flex flex-col gap-2">
+                <div className="flex justify-between items-center">
+                    <label className="text-white text-sm font-bold opacity-80">الماركت</label>
+                    {user.role === 'admin' && (
+                        <button onClick={handleAddMarket} className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                            <Plus size={12}/> إضافة ماركت
+                        </button>
+                    )}
+                </div>
+                <select className="w-full p-4 rounded-2xl bg-gray-800 text-white border border-white/10" value={selectedMarket} onChange={e => setSelectedMarket(e.target.value)}>
+                    <option value="">اختر الماركت من القائمة...</option>
+                    {markets.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+            </div>
 
             {[
                 { label: 'مناديل السحب (Facial)', key: 'Facial' },

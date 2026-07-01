@@ -43,7 +43,7 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
 
     // نوع البيانات: "remaining" (يتم الطرح) أو "accrued" (يتم الجمع كعداد)
     const typeLogic = { annual: 'remaining', casual: 'remaining', sick: 'accrued', exams: 'accrued', unpaid: 'accrued' };
-    const typeLabels = { annual: 'سنوي', casual: 'عارضة', sick: 'مرضي', exams: 'امتحانات', unpaid: 'غياب بدون إذن' };
+    const typeLabels = { annual: 'سنوي', casual: 'عارضة', sick: 'مرضي', exams: 'امتحانات', unpaid: 'غياب بأذن' };
     const typeColors = { annual: 'text-green-400', casual: 'text-yellow-400', sick: 'text-red-400', exams: 'text-purple-400', unpaid: 'text-orange-400' };
 
     useEffect(() => {
@@ -60,7 +60,7 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
                 const data = snapshot.val() as Record<string, LeaveBalance>;
                 setBalances(data);
                 
-                // منطق التصفير التلقائي لخانة "غياب بدون إذن" في يوم 21 من كل شهر
+                // منطق التصفير التلقائي لخانة "غياب بأذن" في يوم 21 من كل شهر
                 const now = new Date();
                 const day = now.getDate();
                 const currentMonthKey = `${now.getFullYear()}-${now.getMonth() + 1}`;
@@ -309,9 +309,9 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
                                 <div className="text-[10px] font-black opacity-40 uppercase tracking-widest mb-1">دورة الشهر المختارة</div>
                                 <div className="text-sm font-bold flex items-center gap-2">
                                     <CalendarIcon size={16} className="text-blue-500"/>
-                                    {periodDate.toLocaleDateString('ar-EG', {day: 'numeric', month: 'numeric'})} 
+                                    {periodDate.toLocaleDateString('en-GB', {day: 'numeric', month: 'numeric', year: 'numeric'})} 
                                     <span className="opacity-40 px-2">إلى</span>
-                                    {getPeriodEnd(periodDate).toLocaleDateString('ar-EG', {day: 'numeric', month: 'numeric'})}
+                                    {getPeriodEnd(periodDate).toLocaleDateString('en-GB', {day: 'numeric', month: 'numeric', year: 'numeric'})}
                                 </div>
                             </div>
                             <button onClick={() => changePeriod(1)} className="p-2 bg-white/5 rounded-full hover:bg-blue-600 transition"><ChevronLeft size={20}/></button>

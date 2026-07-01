@@ -32,6 +32,14 @@ const InventoryRegistration: React.FC<Props> = ({ user, markets, theme, products
         { name: 'مناديل دولفن (Dolphin)', key: 'Dolphin', allowAdd: true },
     ];
 
+    const handleAddMarket = async () => {
+        const newMarket = prompt("أدخل اسم الماركت الجديد:");
+        if (newMarket && newMarket.trim()) {
+            await push(ref(db, 'settings/markets'), { name: newMarket.trim(), createdBy: 'system' });
+            alert("تم إضافة الماركت بنجاح");
+        }
+    };
+
     useEffect(() => {
         setItems(prev => {
             return products.map(p => {
@@ -63,11 +71,9 @@ const InventoryRegistration: React.FC<Props> = ({ user, markets, theme, products
     };
 
     const removeCustomItem = async (id: string) => {
+        setItems(prev => prev.filter(i => i.id !== id));
         if (user.role === 'admin') {
             await remove(ref(db, `products/${id}`));
-            setItems(prev => prev.filter(i => i.id !== id));
-        } else {
-            setItems(prev => prev.filter(i => i.id !== id));
         }
     };
 
@@ -94,7 +100,12 @@ const InventoryRegistration: React.FC<Props> = ({ user, markets, theme, products
         <div className="pb-20">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">تسجيل المخزون</h2>
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-1">
+                    {user.role === 'admin' && (
+                        <button onClick={handleAddMarket} className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center justify-end gap-1">
+                            <Plus size={12}/> إضافة ماركت
+                        </button>
+                    )}
                     <select className={dropdownClass} value={selectedMarket} onChange={e => setSelectedMarket(e.target.value)}>
                         <option value="">اختر الماركت</option>
                         {markets.map(m => <option key={m} value={m}>{m}</option>)}

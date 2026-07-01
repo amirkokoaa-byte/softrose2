@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
-import { ref, onValue, remove, update } from "firebase/database";
+import { ref, onValue, remove, update, push } from "firebase/database";
 import { User, CompetitorPrice } from '../types';
 import { exportToCSV } from '../utils';
 import { COMPANIES } from '../constants';
-import { Trash2, Edit, Save, X, FileSpreadsheet, User as UserIcon, Calendar, Building, Scale, Search, Filter } from 'lucide-react';
+import { Trash2, Edit, Save, X, FileSpreadsheet, User as UserIcon, Calendar, Building, Scale, Search, Filter, Plus } from 'lucide-react';
 
 interface Props {
     user: User;
@@ -18,12 +18,36 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
     const [selectedMarket, setSelectedMarket] = useState('');
     const [selectedCompany, setSelectedCompany] = useState('');
     const [editingReport, setEditingReport] = useState<CompetitorPrice | null>(null);
+    const [customCompanies, setCustomCompanies] = useState<string[]>([]);
     
     // Price Comparison State
     const [showComparisonModal, setShowComparisonModal] = useState(false);
     const [compMarket, setCompMarket] = useState('all');
     const [compCompany, setCompCompany] = useState(COMPANIES[0]);
     const [compProduct, setCompProduct] = useState('all');
+
+    useEffect(() => {
+        onValue(ref(db, 'settings/companies'), snapshot => {
+            if (snapshot.exists()) {
+                const companies = Object.values(snapshot.val()).map((c: any) => {
+                    if (typeof c === 'string') return c;
+                    if (c && typeof c === 'object') {
+                        let extractedName = c.name;
+                        if (typeof extractedName === 'object' && extractedName !== null) {
+                            extractedName = extractedName.name || String(extractedName);
+                        }
+                        return extractedName;
+                    }
+                    return String(c);
+                }).filter(n => typeof n === 'string' && n !== '[object Object]');
+                setCustomCompanies(companies);
+            } else {
+                setCustomCompanies([]);
+            }
+        });
+    }, []);
+
+    const allCompanies = Array.from(new Set([...COMPANIES, ...customCompanies]));
 
     useEffect(() => {
         onValue(ref(db, 'competitor_prices'), s => {
@@ -37,7 +61,7 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
                     arr = arr.filter(d => markets.includes(d.market));
                 }
                 
-                setData(arr.sort((a, b) => b.timestamp - a.timestamp));
+                setData([...arr].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
             } else {
                 setData([]);
             }
@@ -47,15 +71,14 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
     const filtered = data.filter(d => 
         (!selectedMarket || d.market === selectedMarket) &&
         (!selectedCompany || d.company === selectedCompany)
-    );
+    ).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
     // منطق مقارنة الأسعار: استخراج أحدث سعر لكل منتج في كل ماركت
     const comparisonResults = useMemo(() => {
         const results: { market: string; product: string; price: number; date: string; timestamp: number }[] = [];
-        const latestMap = new Map<string, CompetitorPrice>();
-
-        // ترتيب البيانات من الأحدث للأقدم لمعالجة أحدث سعر أولاً
-        const sortedData = [...data].sort((a, b) => b.timestamp - a.timestamp);
+        
+        // ترتيب البيانات من الأحدث للأقدم لمعالجة أحدث سعر أولاً مع ضمان وجود التايم ستامب
+        const sortedData = [...data].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
         sortedData.forEach(record => {
             if (record.company === compCompany) {
@@ -79,7 +102,8 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
             }
         });
 
-        return results.sort((a, b) => a.market.localeCompare(b.market, 'ar'));
+        // Sort the final results by timestamp (newest first) instead of alphabetically
+        return results.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     }, [data, compCompany, compMarket, compProduct]);
 
     // قائمة المنتجات المتاحة للشركة المختارة في المقارنة
@@ -115,8 +139,10 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
 
     const handleUpdate = async () => {
         if(!editingReport || !editingReport.id) return;
-        await update(ref(db, `competitor_prices/${editingReport.id}`), { items: editingReport.items });
+        const updatedReport = editingReport;
+        setData(prev => prev.map(d => d.id === updatedReport.id ? updatedReport : d));
         setEditingReport(null);
+        await update(ref(db, `competitor_prices/${updatedReport.id}`), { items: updatedReport.items });
         alert("تم التعديل بنجاح");
     };
 
@@ -125,6 +151,45 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
         const newItems = [...editingReport.items];
         newItems[index] = { ...newItems[index], [field]: value };
         setEditingReport({ ...editingReport, items: newItems });
+    };
+
+    const handleInlineEdit = async (record: CompetitorPrice, itemIdx: number) => {
+        const newPrice = prompt("أدخل السعر الجديد:", record.items[itemIdx].price.toString());
+        if (newPrice !== null && !isNaN(Number(newPrice)) && Number(newPrice) > 0) {
+            const newItems = [...record.items];
+            newItems[itemIdx].price = Number(newPrice);
+            setData(prev => prev.map(d => d.id === record.id ? { ...d, items: newItems } : d));
+            await update(ref(db, `competitor_prices/${record.id}`), { items: newItems });
+        }
+    };
+
+    const handleInlineDelete = async (record: CompetitorPrice, itemIdx: number) => {
+        if (confirm("هل أنت متأكد من حذف هذا الصنف؟")) {
+            const newItems = record.items.filter((_, i) => i !== itemIdx);
+            if (newItems.length === 0) {
+                setData(prev => prev.filter(d => d.id !== record.id));
+                await remove(ref(db, `competitor_prices/${record.id}`));
+            } else {
+                setData(prev => prev.map(d => d.id === record.id ? { ...d, items: newItems } : d));
+                await update(ref(db, `competitor_prices/${record.id}`), { items: newItems });
+            }
+        }
+    };
+
+    const handleAddMarket = async () => {
+        const newMarket = prompt("أدخل اسم الماركت الجديد:");
+        if (newMarket && newMarket.trim()) {
+            await push(ref(db, 'settings/markets'), { name: newMarket.trim(), createdBy: 'system' });
+            alert("تم إضافة الماركت بنجاح");
+        }
+    };
+
+    const handleAddCompany = async () => {
+        const newCompany = prompt("أدخل اسم الشركة الجديدة:");
+        if (newCompany && newCompany.trim()) {
+            await push(ref(db, 'settings/companies'), { name: newCompany.trim(), createdBy: 'system' });
+            alert("تم إضافة الشركة بنجاح");
+        }
     };
 
     const inputClass = "w-full p-2.5 rounded-xl bg-gray-700 text-white border border-white/10 text-xs font-bold";
@@ -145,14 +210,34 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
             
             <div className="bg-gray-800 p-5 rounded-2xl space-y-4 border border-white/10 shadow-xl">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <select className={inputClass} value={selectedMarket} onChange={e => setSelectedMarket(e.target.value)}>
-                        <option value="">كل الماركتات المتاحة لك</option>
-                        {markets.map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
-                    <select className={inputClass} value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)}>
-                        <option value="">كل الشركات</option>
-                        {COMPANIES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
+                    <div>
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="block text-[10px] font-black opacity-60 text-white uppercase">الماركت / الفرع</label>
+                            {user.role === 'admin' && (
+                                <button onClick={handleAddMarket} className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                                    <Plus size={12}/> إضافة ماركت
+                                </button>
+                            )}
+                        </div>
+                        <select className={inputClass} value={selectedMarket} onChange={e => setSelectedMarket(e.target.value)}>
+                            <option value="">كل الماركتات المتاحة لك</option>
+                            {markets.map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="block text-[10px] font-black opacity-60 text-white uppercase">الشركة المنافسة</label>
+                            {user.role === 'admin' && (
+                                <button onClick={handleAddCompany} className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                                    <Plus size={12}/> إضافة شركة
+                                </button>
+                            )}
+                        </div>
+                        <select className={inputClass} value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)}>
+                            <option value="">كل الشركات</option>
+                            {allCompanies.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                    </div>
                 </div>
                 <button onClick={handleExport} className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl flex items-center justify-center gap-2 font-bold shadow-lg transition active:scale-95">
                     <FileSpreadsheet size={20} /> تصدير التقرير التفصيلي (أحدث المبيعات)
@@ -172,17 +257,36 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
                                 </div>
                             </div>
                             <div className="flex gap-1">
-                                <button onClick={() => setEditingReport(record)} className="p-2 text-indigo-400 hover:bg-indigo-500/20 rounded-lg transition"><Edit size={16}/></button>
-                                {(user.role === 'admin' || user.name === record.employeeName) && (
-                                     <button onClick={() => remove(ref(db, `competitor_prices/${record.id!}`))} className="p-2 text-red-400 hover:bg-red-500/20 rounded-lg transition"><Trash2 size={16}/></button>
+                                {user.role === 'admin' && (
+                                    <>
+                                        <button onClick={() => setEditingReport(record)} className="p-2 text-indigo-400 hover:bg-indigo-500/20 rounded-lg transition"><Edit size={16}/></button>
+                                        <button onClick={() => {
+                                            if(confirm('هل أنت متأكد من حذف هذا التقرير؟')) {
+                                                setData(prev => prev.filter(d => d.id !== record.id));
+                                                remove(ref(db, `competitor_prices/${record.id!}`));
+                                            }
+                                        }} className="p-2 text-red-400 hover:bg-red-500/20 rounded-lg transition"><Trash2 size={16}/></button>
+                                    </>
                                 )}
                             </div>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                             {(record.items || []).map((item, idx) => (
-                                <div key={idx} className="flex justify-between p-2 px-3 bg-black/30 rounded-xl text-xs border border-white/5">
+                                <div key={idx} className="flex justify-between items-center p-2 px-3 bg-black/30 rounded-xl text-xs border border-white/5 group">
                                     <span className="opacity-80 truncate pr-2 font-bold text-white">{item.name}</span>
-                                    <span className="font-black text-green-400">{item.price} ج.م</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-black text-green-400">{item.price} ج.م</span>
+                                        {user.role === 'admin' && (
+                                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button onClick={() => handleInlineEdit(record, idx)} className="p-1 text-blue-400 hover:bg-blue-500/20 rounded-lg transition" title="تعديل السعر">
+                                                    <Edit size={14}/>
+                                                </button>
+                                                <button onClick={() => handleInlineDelete(record, idx)} className="p-1 text-red-400 hover:bg-red-500/20 rounded-lg transition" title="حذف الصنف">
+                                                    <Trash2 size={14}/>
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -210,7 +314,7 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
                             <div>
                                 <label className="block text-[10px] font-black opacity-40 uppercase mb-1 text-white">الشركة</label>
                                 <select className="w-full p-3 rounded-xl bg-[#808080] text-white border border-white/10 text-xs font-bold" value={compCompany} onChange={e => setCompCompany(e.target.value)}>
-                                    {COMPANIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                    {allCompanies.map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
                             </div>
                             <div>
