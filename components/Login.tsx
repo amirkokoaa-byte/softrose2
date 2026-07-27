@@ -14,6 +14,7 @@ const Login: React.FC<Props> = ({ onLogin, theme }) => {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [rememberMe, setRememberMe] = useState(false);
 
     useEffect(() => {
         const savedUser = localStorage.getItem('soft_rose_user');
@@ -22,6 +23,20 @@ const Login: React.FC<Props> = ({ onLogin, theme }) => {
                 onLogin(JSON.parse(savedUser));
             } catch (e) {
                 localStorage.removeItem('soft_rose_user');
+            }
+        }
+        
+        const remembered = localStorage.getItem('soft_rose_remembered');
+        if (remembered) {
+            try {
+                const parsed = JSON.parse(remembered);
+                if (parsed.username && parsed.password) {
+                    setUsername(parsed.username);
+                    setPassword(parsed.password);
+                    setRememberMe(true);
+                }
+            } catch (e) {
+                localStorage.removeItem('soft_rose_remembered');
             }
         }
     }, [onLogin]);
@@ -50,6 +65,11 @@ const Login: React.FC<Props> = ({ onLogin, theme }) => {
                     canViewAllSales: true
                 };
                 localStorage.setItem('soft_rose_user', JSON.stringify(adminUser));
+                if (rememberMe) {
+                    localStorage.setItem('soft_rose_remembered', JSON.stringify({username: cleanUsername, password: cleanPassword}));
+                } else {
+                    localStorage.removeItem('soft_rose_remembered');
+                }
                 onLogin(adminUser);
                 return;
             }
@@ -67,6 +87,11 @@ const Login: React.FC<Props> = ({ onLogin, theme }) => {
                 if (userKey) {
                     const userData = { ...users[userKey], key: userKey };
                     localStorage.setItem('soft_rose_user', JSON.stringify(userData));
+                    if (rememberMe) {
+                        localStorage.setItem('soft_rose_remembered', JSON.stringify({username: cleanUsername, password: cleanPassword}));
+                    } else {
+                        localStorage.removeItem('soft_rose_remembered');
+                    }
                     onLogin(userData);
                 } else {
                     setError('بيانات الدخول غير صحيحة');
@@ -137,6 +162,19 @@ const Login: React.FC<Props> = ({ onLogin, theme }) => {
                             </div>
                         </div>
                         
+                        <div className="flex items-center gap-2 mt-2">
+                            <input 
+                                type="checkbox" 
+                                id="rememberMe" 
+                                checked={rememberMe}
+                                onChange={(e) => setRememberMe(e.target.checked)}
+                                className="w-4 h-4 rounded bg-white/5 border-white/10 accent-blue-500"
+                            />
+                            <label htmlFor="rememberMe" className="text-xs font-bold text-white/70 cursor-pointer">
+                                تذكر بيانات الدخول
+                            </label>
+                        </div>
+                        
                         {error && (
                             <div className="bg-red-500/20 border border-red-500/40 text-red-200 px-4 py-3 rounded-xl text-[11px] text-center font-bold animate-in fade-in slide-in-from-top-1">
                                 {error}
@@ -162,7 +200,7 @@ const Login: React.FC<Props> = ({ onLogin, theme }) => {
 
                     <div className="mt-10 pt-6 border-t border-white/10 text-center">
                         <p className="text-[10px] font-bold opacity-30 uppercase tracking-[0.2em]">
-                            Soft Rose Trading © 2024
+                            Soft Rose Trading © {new Date().getFullYear()}
                         </p>
                         <p className="text-[11px] font-bold text-blue-400 mt-2 opacity-60">
                             مع تحيات المطور Amir Lamay

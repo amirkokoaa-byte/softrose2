@@ -1,0 +1,57 @@
+--- components/DailySales.tsx
++++ components/DailySales.tsx
+@@ -23,6 +23,7 @@
+     const [tempName, setTempName] = useState('');
+     const [userTarget, setUserTarget] = useState<UserTarget | null>(null);
+     const [markets, setMarkets] = useState<string[]>([]);
++    const [myAchieved, setMyAchieved] = useState(0);
+ 
+     useEffect(() => {
+         onValue(ref(db, 'products'), (snapshot) => {
+@@ -57,7 +58,7 @@
+                     const now = new Date();
+                     const currentMonth = `${now.getFullYear()}-${now.getMonth() + 1}`;
+                     
+-                    if (data.lastResetMonth !== currentMonth && data.employeeName !== 'Malak' && data.employeeName !== 'ملك') {
++                    if (data.lastResetMonth !== currentMonth) {
+                         const historyRef = ref(db, `target_history/${user.key}`);
+                         push(historyRef, {
+                             userId: data.userId,
+@@ -82,6 +83,30 @@
+         }
+     }, [user.key, user.name]);
+ 
++    useEffect(() => {
++        const salesRef = ref(db, 'sales');
++        const unsubscribe = onValue(salesRef, (snapshot) => {
++            if (snapshot.exists()) {
++                const allSales = Object.values(snapshot.val() || {}) as any[];
++                const now = new Date();
++                const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
++                const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).getTime();
++                
++                const sum = allSales.filter(s => {
++                    const nameMatches = s.employeeName?.trim().toLowerCase() === user.name.trim().toLowerCase();
++                    return nameMatches && s.timestamp >= start && s.timestamp <= end;
++                }).reduce((acc, s) => acc + (Number(s.total) || 0), 0);
++                
++                setMyAchieved(sum);
++            } else {
++                setMyAchieved(0);
++            }
++        });
++        return () => unsubscribe();
++    }, [user.name]);
++
+     const updateItem = (id: string, field: string, value: any) => {
+         setSalesItems(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
+     };
+@@ -118,7 +143,7 @@
+ 
+     const currentTotal = salesItems.reduce((sum, item) => sum + ((item.price || 0) * (item.qty || 0)), 0);
+ 
+-    const activeAchieved = (Number(userTarget?.achieved) || 0) + currentTotal;
++    const activeAchieved = myAchieved + currentTotal;
+     const remaining = userTarget ? Math.max(0, Number(userTarget.finalTarget) - activeAchieved) : 0;
+     const progressPercent = userTarget ? Math.min(100, Math.round((activeAchieved / Number(userTarget.finalTarget)) * 100)) : 0;
+ 

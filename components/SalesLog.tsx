@@ -52,6 +52,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
     const [exportMarket, setExportMarket] = useState('');
 
     const [showCurrentTargetsModal, setShowCurrentTargetsModal] = useState(false);
+    const [selectedTargetMonth, setSelectedTargetMonth] = useState<string>('current');
     const [showPastTargetsModal, setShowPastTargetsModal] = useState(false);
     const [targetsList, setTargetsList] = useState<UserTarget[]>([]);
 
@@ -297,11 +298,15 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
         );
     };
 
-    const computeAchieved = (employeeName: string, year: number, month: number) => {
+    const computeAchieved = (employeeName: string, year: number, month: number, userId?: string) => {
         const start = new Date(year, month, 1).getTime();
         const end = new Date(year, month + 1, 0, 23, 59, 59).getTime(); // last day of month
         return sales
-            .filter(s => s.employeeName === employeeName && s.timestamp >= start && s.timestamp <= end)
+            .filter(s => {
+                const nameMatches = s.employeeName?.trim().toLowerCase() === employeeName?.trim().toLowerCase();
+                const userMatches = userId && s.username && (s.username.replace(/[.#$/[\]]/g, "_") === userId || s.username === userId);
+                return (nameMatches || userMatches) && s.timestamp >= start && s.timestamp <= end;
+            })
             .reduce((sum, s) => sum + s.total, 0);
     };
 
@@ -322,8 +327,18 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
     const renderTargetsList = () => {
         const now = new Date();
         const targetsWithAchieved = targetsList.map(t => {
-            const achieved = computeAchieved(t.employeeName, now.getFullYear(), now.getMonth());
-            return { ...t, achieved };
+            const achieved = computeAchieved(t.employeeName, now.getFullYear(), now.getMonth(), t.userId);
+            
+            const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+            const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).getTime();
+            const employeeSales = sales.filter(s => {
+                const nameMatches = s.employeeName?.trim().toLowerCase() === t.employeeName?.trim().toLowerCase();
+                const userMatches = t.userId && s.username && (s.username.replace(/[.#$/[\]]/g, "_") === t.userId || s.username === t.userId);
+                return (nameMatches || userMatches) && s.timestamp >= start && s.timestamp <= end;
+            });
+            const activeMarkets = Array.from(new Set(employeeSales.map(s => s.market))).sort().join('، ');
+
+            return { ...t, achieved, activeMarkets };
         });
 
         const totalTarget = targetsWithAchieved.reduce((sum, t) => sum + t.finalTarget, 0);
@@ -340,6 +355,11 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                                 <div>
                                     <div className="font-bold text-white text-lg">{t.employeeName}</div>
                                     <div className="text-xs opacity-60 text-white">{t.market}</div>
+                                    {t.activeMarkets && (
+                                        <div className="text-[11px] text-blue-300 mt-1 font-medium break-words whitespace-normal md:max-w-md">
+                                            الفروع: {t.activeMarkets}
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button onClick={() => handleEditCurrentTarget(t.userId, t.finalTarget)} className="p-1.5 text-blue-400 hover:bg-blue-500/20 rounded-lg transition" title="تعديل"><Edit size={16}/></button>
@@ -393,6 +413,167 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
         );
     };
 
+    const getPastMonthTargetsData = (mKey: string) => {
+        const [yStr, mStr] = mKey.split('-');
+        const year = parseInt(yStr);
+        const month = parseInt(mStr) - 1; // Month index (0-11)
+        
+        const exactNames = findExactEmployeeNames();
+        const targetNames = [exactNames.omnia, exactNames.toqa, exactNames.mena];
+
+        const candidates = new Map<string, { userId: string; employeeName: string; market: string }>();
+
+        targetsList.forEach(t => {
+            candidates.set(t.employeeName, {
+                userId: t.userId,
+                employeeName: t.employeeName,
+                market: t.market
+            });
+        });
+
+        archiveData.forEach(h => {
+            if (h.month === mKey && !(h as any).isDeleted) {
+                let market = '';
+                const existing = candidates.get(h.employeeName);
+                if (existing) {
+                    market = existing.market;
+                } else {
+                    const foundTarget = targetsList.find(t => t.employeeName === h.employeeName);
+                    if (foundTarget) {
+                        market = foundTarget.market;
+                    } else {
+                        const foundSale = sales.find(s => s.employeeName === h.employeeName);
+                        market = foundSale ? foundSale.market : 'غير محدد';
+                    }
+                }
+                candidates.set(h.employeeName, {
+                    userId: h.userId,
+                    employeeName: h.employeeName,
+                    market: market || 'غير محدد'
+                });
+            }
+        });
+
+        if (mKey === "2026-06") {
+            targetNames.forEach(empName => {
+                if (!candidates.has(empName)) {
+                    const u = usersList.find(usr => usr.name === empName);
+                    const t = targetsList.find(tg => tg.employeeName === empName);
+                    let market = t ? t.market : '';
+                    if (!market) {
+                        const foundSale = sales.find(s => s.employeeName === empName);
+                        market = foundSale ? foundSale.market : 'غير محدد';
+                    }
+                    candidates.set(empName, {
+                        userId: u?.key || empName,
+                        employeeName: empName,
+                        market: market || 'غير محدد'
+                    });
+                }
+            });
+        }
+
+        const resultList = Array.from(candidates.values()).map(c => {
+            const historical = archiveData.find(a => a.userId === c.userId && a.month === mKey);
+            
+            let targetAmount = 0;
+            if (historical) {
+                if ((historical as any).isDeleted) return null;
+                targetAmount = historical.targetAmount;
+            } else {
+                const t = targetsList.find(x => x.employeeName === c.employeeName);
+                targetAmount = t ? t.finalTarget : 0;
+            }
+
+            let achievedAmount = computeAchieved(c.employeeName, year, month, c.userId);
+            if (mKey === "2026-06" && targetNames.includes(c.employeeName)) {
+                achievedAmount = computeAchieved(c.employeeName, 2026, 5, c.userId); // June
+            }
+
+            if (targetAmount === 0 && achievedAmount === 0) return null;
+
+            return {
+                userId: c.userId,
+                employeeName: c.employeeName,
+                market: c.market,
+                targetAmount,
+                achievedAmount
+            };
+        }).filter(Boolean) as { userId: string; employeeName: string; market: string; targetAmount: number; achievedAmount: number }[];
+
+        return resultList;
+    };
+
+    const renderPastMonthTargetsList = (mKey: string) => {
+        const dataList = getPastMonthTargetsData(mKey);
+
+        const totalTarget = dataList.reduce((sum, item) => sum + item.targetAmount, 0);
+        const totalAchieved = dataList.reduce((sum, item) => sum + item.achievedAmount, 0);
+        const totalPerc = totalTarget > 0 ? ((totalAchieved / totalTarget) * 100).toFixed(1) : "0.0";
+
+        return (
+            <div className="space-y-4">
+                <div className="p-4 bg-orange-600/10 border border-orange-500/30 rounded-2xl flex items-center justify-between">
+                    <div>
+                        <span className="text-[10px] opacity-70 text-white uppercase font-black block">شهر الأرشيف المختار</span>
+                        <span className="font-black text-lg text-white">{mKey}</span>
+                    </div>
+                </div>
+                <div className="space-y-2">
+                    {dataList.map(item => {
+                        const perc = item.targetAmount > 0 ? ((item.achievedAmount / item.targetAmount) * 100).toFixed(1) : "0.0";
+                        return (
+                            <div key={`${item.userId}-${mKey}`} className="flex justify-between items-center bg-black/20 p-4 rounded-xl border border-white/5">
+                                <div className="min-w-[160px] max-w-[200px] flex flex-col justify-center text-right pr-2">
+                                    <div className="font-bold text-white text-sm break-words whitespace-normal">{item.employeeName}</div>
+                                    <div className="text-[11px] text-blue-300 mt-1 font-medium break-words whitespace-normal">{item.market}</div>
+                                </div>
+                                <div className="flex-1 flex justify-center gap-6">
+                                    <div className="flex flex-col items-center">
+                                        <span className="text-[10px] opacity-50 text-white uppercase font-black">التارجت</span>
+                                        <span className="font-black text-yellow-400 text-sm">{item.targetAmount.toLocaleString()} ج.م</span>
+                                    </div>
+                                    <div className="flex flex-col items-center">
+                                        <span className="text-[10px] opacity-50 text-white uppercase font-black">المحقق</span>
+                                        <span className="font-black text-green-400 text-sm">{item.achievedAmount.toLocaleString()} ج.م</span>
+                                    </div>
+                                </div>
+                                <div className="w-20 text-left border-l border-white/10 pl-2 ml-2 flex flex-col justify-center">
+                                    <span className="text-[10px] opacity-50 text-white uppercase font-black block text-center">النسبة</span>
+                                    <span className="font-black text-blue-400 text-sm text-center">{perc}%</span>
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {dataList.length === 0 && <div className="text-center py-10 opacity-50 text-white">لا توجد بيانات لهذا الشهر</div>}
+                </div>
+                {dataList.length > 0 && (
+                    <div className="mt-4 p-4 rounded-2xl bg-orange-600/20 border border-orange-500/30">
+                        <div className="flex justify-between items-center">
+                            <div className="font-bold text-white text-lg">الإجمالي لجميع الحسابات</div>
+                            <div className="flex items-center gap-2">
+                                <div className="text-left flex flex-col pl-3 border-l border-white/20">
+                                    <span className="text-xs opacity-70 text-white">متوسط النسبة</span>
+                                    <span className="font-black text-orange-400">{totalPerc}%</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="mt-3 flex justify-between items-center bg-black/40 p-3 rounded-xl">
+                            <div className="flex flex-col">
+                                <span className="text-[10px] opacity-70 text-white uppercase font-black">إجمالي التارجت</span>
+                                <span className="font-black text-yellow-400">{totalTarget.toLocaleString()} ج.م</span>
+                            </div>
+                            <div className="flex flex-col text-left">
+                                <span className="text-[10px] opacity-70 text-white uppercase font-black">إجمالي المحقق</span>
+                                <span className="font-black text-green-400">{totalAchieved.toLocaleString()} ج.م</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     const handleDownloadImage = async () => {
         let element = document.getElementById('current-targets-print-area');
         if (!element || element.offsetParent === null) {
@@ -407,6 +588,51 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
             const dataUrl = canvas.toDataURL('image/png');
             const link = document.createElement('a');
             link.download = `targets-${new Date().toISOString().split('T')[0]}.png`;
+            link.href = dataUrl;
+            link.click();
+        } catch (err) {
+            console.error("Failed to capture image", err);
+            alert("حدث خطأ أثناء تحميل الصورة");
+        }
+    };
+
+    const findExactEmployeeNames = () => {
+        const allNames = new Set<string>();
+        sales.forEach(s => { if (s.employeeName) allNames.add(s.employeeName); });
+        usersList.forEach(u => { if (u.name) allNames.add(u.name); });
+        
+        const targets = {
+            omnia: 'Omnia',
+            toqa: 'Toqa',
+            mena: 'Mena Ahmed'
+        };
+        
+        allNames.forEach(name => {
+            const lower = name.toLowerCase();
+            if (lower.includes('omnia') || lower.includes('أمنية') || lower.includes('امنية')) {
+                targets.omnia = name;
+            }
+            if (lower.includes('toqa') || lower.includes('تقى') || lower.includes('تقي')) {
+                targets.toqa = name;
+            }
+            if (lower.includes('mena') || lower.includes('مينا')) {
+                targets.mena = name;
+            }
+        });
+        return targets;
+    };
+
+    const handleDownloadPastMonthImage = async (mKey: string) => {
+        const element = document.getElementById(`past-month-${mKey}`);
+        if (!element) return;
+        try {
+            const canvas = await html2canvas(element, {
+                backgroundColor: '#1f2937', // bg-gray-800
+                scale: 2,
+            });
+            const dataUrl = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = `targets-${mKey}.png`;
             link.href = dataUrl;
             link.click();
         } catch (err) {
@@ -776,6 +1002,35 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                                     return acc;
                                 }, {} as Record<string, TargetHistory[]>);
 
+                                // Ensure June ("2026-06") has Omnia, Toqa, Mena Ahmed's actual sales
+                                const exactNames = findExactEmployeeNames();
+                                const targetNames = [exactNames.omnia, exactNames.toqa, exactNames.mena];
+                                
+                                if (!grouped["2026-06"] && targetNames.length > 0) {
+                                    grouped["2026-06"] = [];
+                                }
+                                
+                                if (grouped["2026-06"]) {
+                                    targetNames.forEach(empName => {
+                                        const u = usersList.find(usr => usr.name === empName);
+                                        const JuneAchieved = computeAchieved(empName, 2026, 5, u?.key); // Month index 5 is June
+                                        const existingIdx = grouped["2026-06"].findIndex(h => h.employeeName === empName);
+                                        if (existingIdx !== -1) {
+                                            grouped["2026-06"][existingIdx].achievedAmount = JuneAchieved;
+                                        } else {
+                                            const t = targetsList.find(tg => tg.employeeName === empName);
+                                            grouped["2026-06"].push({
+                                                id: `temp-${empName}`,
+                                                userId: u?.key || empName,
+                                                employeeName: empName,
+                                                month: "2026-06",
+                                                targetAmount: t ? t.finalTarget : 0,
+                                                achievedAmount: JuneAchieved
+                                            });
+                                        }
+                                    });
+                                }
+
                                 const getMonthDateRange = (monthStr: string) => {
                                     if (!monthStr || !monthStr.includes('-')) return '';
                                     const [year, month] = monthStr.split('-');
@@ -959,30 +1214,56 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                     <div className="bg-gray-900 border border-white/10 w-full max-w-2xl rounded-3xl p-6 shadow-2xl flex flex-col max-h-[90vh]">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="font-bold text-xl text-orange-400 flex items-center gap-2">
-                                <Target size={24}/> تارجت الشهر الحالي
+                                <Target size={24}/> {selectedTargetMonth === 'current' ? 'تارجت الشهر الحالي' : `أرشيف التارجت لشهر ${selectedTargetMonth}`}
                             </h3>
-                            <button onClick={() => setShowCurrentTargetsModal(false)} className="text-white/50 hover:text-white"><X size={20}/></button>
+                            <button onClick={() => { setShowCurrentTargetsModal(false); setSelectedTargetMonth('current'); }} className="text-white/50 hover:text-white"><X size={20}/></button>
                         </div>
                         
-                        <div className="flex gap-2 mb-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-4 items-end">
+                            <div className="md:col-span-1">
+                                <label className="block text-[10px] font-black opacity-50 uppercase mb-1 text-white">التارجت السابق</label>
+                                <select 
+                                    className="w-full p-2.5 rounded-xl bg-gray-800 text-white border border-white/10 text-xs font-bold"
+                                    value={selectedTargetMonth === 'current' ? '' : selectedTargetMonth}
+                                    onChange={(e) => {
+                                        if (e.target.value) {
+                                            setSelectedTargetMonth(e.target.value);
+                                        }
+                                    }}
+                                >
+                                    <option value="" disabled>-- اختر شهر من الأرشيف --</option>
+                                    {pastMonthsList.map(mKey => (
+                                        <option key={mKey} value={mKey}>{mKey}</option>
+                                    ))}
+                                </select>
+                            </div>
+
                             <button 
-                                onClick={() => { setShowCurrentTargetsModal(false); setShowPastTargetsModal(true); }}
-                                className="bg-gray-700 hover:bg-gray-600 text-white flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition"
+                                onClick={() => setSelectedTargetMonth('current')}
+                                className={`py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition h-[40px] ${
+                                    selectedTargetMonth === 'current' 
+                                        ? 'bg-orange-600 text-white cursor-default' 
+                                        : 'bg-gray-700 hover:bg-gray-600 text-white'
+                                }`}
                             >
-                                <History size={18}/> التارجت السابق
+                                <Target size={14}/> الشهر الحالي
                             </button>
+
                             <button 
                                 onClick={handleDownloadImage}
-                                className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition"
+                                className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition h-[40px]"
                                 title="تحميل صورة"
                             >
-                                <Printer size={18}/> تحميل كصورة
+                                <Printer size={14}/> تحميل كصورة
                             </button>
                         </div>
 
                         <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
                             <div id="current-targets-print-area" className="space-y-2 bg-gray-900 pb-2">
-                                {renderTargetsList()}
+                                {selectedTargetMonth === 'current' 
+                                    ? renderTargetsList() 
+                                    : renderPastMonthTargetsList(selectedTargetMonth)
+                                }
                             </div>
                         </div>
                     </div>
@@ -1006,7 +1287,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                                 const month = parseInt(mStr) - 1;
                                 
                                 const monthTargets = targetsList.map(t => {
-                                    const achieved = computeAchieved(t.employeeName, year, month);
+                                    const achieved = computeAchieved(t.employeeName, year, month, t.userId);
                                     let pastTarget = t.finalTarget;
                                     // Try to fetch historical target if available
                                     const historical = archiveData.find(a => a.userId === t.userId && a.month === mKey);
@@ -1048,9 +1329,16 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                                 if (monthTargets.length === 0) return null;
 
                                 return (
-                                    <div key={mKey} className="bg-gray-800 p-4 rounded-2xl border border-white/5">
+                                    <div key={mKey} id={`past-month-${mKey}`} className="bg-gray-800 p-4 rounded-2xl border border-white/5">
                                         <div className="mb-3 border-b border-white/10 pb-2 flex items-center justify-between">
                                             <h4 className="font-bold text-indigo-400">شهر: {mKey}</h4>
+                                            <button 
+                                                onClick={() => handleDownloadPastMonthImage(mKey)}
+                                                className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition"
+                                                title="تحميل كصورة"
+                                            >
+                                                <Printer size={14}/> تحميل كصورة
+                                            </button>
                                         </div>
                                         <div className="space-y-2">
                                             {monthTargets}
@@ -1066,7 +1354,10 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
             {/* Hidden Print Area for html2canvas */}
             <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
                 <div id="hidden-print-area" className="w-[600px] p-6 bg-gray-900 space-y-2">
-                    {renderTargetsList()}
+                    {selectedTargetMonth === 'current' 
+                        ? renderTargetsList() 
+                        : renderPastMonthTargetsList(selectedTargetMonth)
+                    }
                 </div>
             </div>
 

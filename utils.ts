@@ -25,6 +25,26 @@ export const exportToCSV = (data: any[], filename: string) => {
     document.body.removeChild(link);
 };
 
+export const exportToExcel = (sheets: {name: string, data: any[], isAoa?: boolean}[], filename: string) => {
+    import('xlsx').then(XLSX => {
+        const wb = XLSX.utils.book_new();
+        sheets.forEach(sheet => {
+            let ws;
+            if (sheet.isAoa) {
+                ws = XLSX.utils.aoa_to_sheet(sheet.data);
+            } else {
+                ws = XLSX.utils.json_to_sheet(sheet.data);
+            }
+            // Add right-to-left
+            if (!ws['!views']) {
+                ws['!views'] = [{ rightToLeft: true }];
+            }
+            XLSX.utils.book_append_sheet(wb, ws, sheet.name);
+        });
+        XLSX.writeFile(wb, `${filename}.xlsx`);
+    });
+};
+
 export const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString('ar-EG');
 };

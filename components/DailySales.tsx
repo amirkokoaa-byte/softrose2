@@ -17,6 +17,7 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
     const [selectedMarket, setSelectedMarket] = useState('');
     const [salesItems, setSalesItems] = useState<ProductItem[]>([]);
     const [userTarget, setUserTarget] = useState<UserTarget | null>(null);
+    const [myAchieved, setMyAchieved] = useState(0);
     
     // حالات التعديل الجديدة
     const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -57,7 +58,7 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
                     const now = new Date();
                     const currentMonth = `${now.getFullYear()}-${now.getMonth() + 1}`;
                     
-                    if (data.lastResetMonth !== currentMonth && data.employeeName !== 'Malak' && data.employeeName !== 'ملك') {
+                    if (data.lastResetMonth !== currentMonth) {
                         const historyRef = ref(db, `target_history/${user.key}`);
                         push(historyRef, {
                             userId: data.userId,
@@ -80,6 +81,29 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
             });
         }
     }, [user.key, user.name]);
+
+    
+    useEffect(() => {
+        const salesRef = ref(db, 'sales');
+        const unsubscribe = onValue(salesRef, (snapshot) => {
+            if (snapshot.exists()) {
+                const allSales = Object.values(snapshot.val() || {}) as any[];
+                const now = new Date();
+                const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+                const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).getTime();
+                
+                const sum = allSales.filter(s => {
+                    const nameMatches = s.employeeName?.trim().toLowerCase() === user.name.trim().toLowerCase();
+                    return nameMatches && s.timestamp >= start && s.timestamp <= end;
+                }).reduce((acc, s) => acc + (Number(s.total) || 0), 0);
+                
+                setMyAchieved(sum);
+            } else {
+                setMyAchieved(0);
+            }
+        });
+        return () => unsubscribe();
+    }, [user.name]);
 
     const updateItem = (id: string, field: string, value: any) => {
         setSalesItems(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
@@ -118,7 +142,7 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
 
     const currentTotal = salesItems.reduce((sum, item) => sum + ((item.price || 0) * (item.qty || 0)), 0);
 
-    const activeAchieved = (Number(userTarget?.achieved) || 0) + currentTotal;
+    const activeAchieved = myAchieved + currentTotal;
     const remaining = userTarget ? Math.max(0, Number(userTarget.finalTarget) - activeAchieved) : 0;
     const progressPercent = userTarget ? Math.min(100, Math.round((activeAchieved / Number(userTarget.finalTarget)) * 100)) : 0;
 
@@ -138,7 +162,7 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
 
         if (user.key && userTarget) {
             const targetRef = ref(db, `targets/${user.key}`);
-            const newAchieved = (Number(userTarget.achieved) || 0) + currentTotal;
+            const newAchieved = myAchieved + currentTotal;
             await update(targetRef, { achieved: newAchieved });
         }
 

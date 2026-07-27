@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
 import { ref, onValue, remove, update, push } from "firebase/database";
 import { User, CompetitorPrice } from '../types';
-import { exportToCSV } from '../utils';
+import { exportToCSV, exportToExcel } from '../utils';
 import { COMPANIES } from '../constants';
 import { Trash2, Edit, Save, X, FileSpreadsheet, User as UserIcon, Calendar, Building, Scale, Search, Filter, Plus } from 'lucide-react';
 
@@ -114,7 +114,8 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
     }, [data, compCompany]);
 
     const handleExport = () => {
-        const exportData = filtered.flatMap(d => (d.items || []).map(i => ({
+        // 1. All Historical Prices (Sheet 2)
+        const allPricesData = filtered.flatMap(d => (d.items || []).map(i => ({
             "التاريخ": d.date,
             "اليوم": new Date(d.timestamp).toLocaleDateString('ar-EG', { weekday: 'long' }),
             "اسم الفرع": d.market,
@@ -124,7 +125,89 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
             "الفئة": i.category,
             "السعر": i.price
         })));
-        exportToCSV(exportData, 'Competitor_Report_Detailed');
+
+        // 2. Latest Prices Globally (Sheet 1 source data)
+        const latestPricesMap = new Map();
+        const sortedData = [...filtered].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        sortedData.forEach(record => {
+            (record.items || []).forEach(item => {
+                const key = `${record.company}_${item.name}`;
+                if (!latestPricesMap.has(key)) {
+                    latestPricesMap.set(key, {
+                        company: record.company,
+                        category: item.category,
+                        name: item.name,
+                        price: item.price
+                    });
+                }
+            });
+        });
+        const latestGlobal = Array.from(latestPricesMap.values());
+
+        // 3. Create AOA format for Sheet 1
+        const aoa: any[][] = [];
+        const todayStr = new Date().toLocaleDateString('ar-EG');
+        
+        // Unique companies for columns
+        const uniqueCompanies = Array.from(new Set(latestGlobal.map(p => p.company)));
+        
+        // Row 1: Date
+        aoa.push([`التاريخ: ${todayStr}`]);
+        
+        // Row 2: Company Names
+        const compNameRow: any[] = [];
+        uniqueCompanies.forEach(comp => {
+            compNameRow.push(comp, "");
+        });
+        aoa.push(compNameRow);
+        
+        // Row 3: Headers
+        const headersRow: any[] = [];
+        uniqueCompanies.forEach(() => {
+            headersRow.push("الصنف", "السعر");
+        });
+        aoa.push(headersRow);
+
+        const categories = [
+            { key: 'Facial', label: 'Facial' },
+            { key: 'Kitchen', label: 'مناديل مطبخ (Kitchen)' },
+            { key: 'Toilet', label: 'تواليت (Toilet)' }
+        ];
+
+        categories.forEach(cat => {
+            // Category Header Row
+            const catHeaderRow: any[] = [];
+            uniqueCompanies.forEach(() => {
+                catHeaderRow.push(`--- ${cat.label} ---`, "");
+            });
+            aoa.push(catHeaderRow);
+
+            const compItems: Record<string, any[]> = {};
+            let maxItems = 0;
+            uniqueCompanies.forEach(comp => {
+                const items = latestGlobal.filter(p => p.company === comp && p.category === cat.key);
+                compItems[comp] = items;
+                if (items.length > maxItems) maxItems = items.length;
+            });
+
+            for (let i = 0; i < maxItems; i++) {
+                const row: any[] = [];
+                uniqueCompanies.forEach(comp => {
+                    const item = compItems[comp][i];
+                    if (item) {
+                        row.push(item.name, item.price);
+                    } else {
+                        row.push("", "");
+                    }
+                });
+                aoa.push(row);
+            }
+        });
+
+        exportToExcel([
+            { name: "أحدث الأسعار", data: aoa, isAoa: true },
+            { name: "كل الأسعار (سجل)", data: allPricesData, isAoa: false }
+        ], 'تقرير_المنافسين_التفصيلي');
     };
 
     const handleExportComparison = () => {
