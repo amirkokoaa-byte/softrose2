@@ -263,7 +263,15 @@ return () => { unsubUsers(); unsubBalances(); unsubHistory(); };
         };
 
         const generateRandomIn = () => getRandomTime(9, 0, 9, 35);
-        const generateRandomOut = () => getRandomTime(5, 45, 6, 10); // 05:45 to 06:10 as requested
+        const generateRandomOut = (userName = "") => {
+            const lowerName = userName.toLowerCase();
+            if (lowerName.includes('coordinator') || lowerName.includes('منسق')) {
+                return getRandomTime(4, 45, 5, 15);
+            } else if (lowerName.includes('usher') || lowerName.includes('أشر') || lowerName.includes('اشر')) {
+                return getRandomTime(5, 45, 6, 15);
+            }
+            return getRandomTime(5, 45, 6, 15);
+        };
 
         const weekdaysArabic = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
         
@@ -337,7 +345,7 @@ return () => { unsubUsers(); unsubBalances(); unsubHistory(); };
                     const type = leaveRecord.type;
                     if (type === 'official') {
                         attIn = generateRandomIn();
-                        attOut = generateRandomOut();
+                        attOut = generateRandomOut(u.name);
                         notes = "يوم إضافي";
                     } else if (type === 'penalty') {
                         attIn = "غياب";
@@ -396,10 +404,10 @@ return () => { unsubUsers(); unsubBalances(); unsubHistory(); };
                     }
                 } else {
                     attIn = generateRandomIn();
-                    attOut = generateRandomOut();
+                    attOut = generateRandomOut(u.name);
                 }
 
-                aoa.push([dayName, d.toLocaleDateString('ar-EG'), attIn, attOut, notes]);
+                aoa.push([dayName, d.toLocaleDateString('en-US'), attIn, attOut, notes]);
             }
             
             sheets.push({

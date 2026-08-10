@@ -58,6 +58,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme, products }) => {
     const [exportStart, setExportStart] = useState('');
     const [exportEnd, setExportEnd] = useState('');
     const [exportMarket, setExportMarket] = useState('');
+    const [exportEmployee, setExportEmployee] = useState('');
 
     const [showCurrentTargetsModal, setShowCurrentTargetsModal] = useState(false);
     const [selectedTargetMonth, setSelectedTargetMonth] = useState<string>('current');
@@ -260,30 +261,17 @@ const normalizeName = (name: string) => {
     }, [sales, reportItem, reportMarket, reportStart, reportEnd, products]);
 
     
-    const handleShareSales = async (asPdf: boolean) => {
+    const handleShareSales = async (isHighQuality: boolean) => {
         let element = document.getElementById('selected-sales-print-area');
         if (!element) return;
         try {
+            const scale = isHighQuality ? (8000 / 1000) : 2;
             const canvas = await html2canvas(element, {
                 backgroundColor: '#111827',
-                scale: 8000 / 1000, // 8K resolution assuming 1000px container width
+                scale: scale,
                 width: 1000
             });
-            const dataUrl = canvas.toDataURL('image/png', 1.0);
             
-            // if we need pdf we could use jspdf, but they asked for 8K image exported.
-            // "يتم التقاط صورة للعناصر المحددة وإرسالها أو تصديرها كصورة فائقة الجودة"
-            // So we'll just download the image for both cases, or use Share API for Share.
-            if (!asPdf && navigator.share) {
-                const blob = await new Promise(res => canvas.toBlob(res, 'image/png', 1.0));
-                if (blob) {
-                    const file = new File([blob], 'sales.png', { type: 'image/png' });
-                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                        await navigator.share({ files: [file], title: 'مبيعات' });
-                        return;
-                    }
-                }
-            }
             canvas.toBlob((blob) => {
                 if (blob) {
                     const url = URL.createObjectURL(blob);
@@ -293,7 +281,7 @@ const normalizeName = (name: string) => {
                     link.click();
                     setTimeout(() => URL.revokeObjectURL(url), 100);
                 }
-            }, 'image/png', 1.0);
+            }, 'image/png', isHighQuality ? 1.0 : 0.8);
         } catch (err) {
             console.error("Failed to capture image", err);
             alert("حدث خطأ أثناء استخراج الصورة");
@@ -488,7 +476,7 @@ const normalizeName = (name: string) => {
             finalTargets = finalTargets.filter(t => t.userId === targetPrintEmployee);
         }
         const totalTarget = finalTargets.reduce((sum, t) => sum + t.finalTarget, 0);
-        const totalAchieved = targetsWithAchieved.reduce((sum, t) => sum + t.achieved, 0);
+        const totalAchieved = finalTargets.reduce((sum, t) => sum + t.achieved, 0);
         const totalPerc = totalTarget > 0 ? ((totalAchieved / totalTarget) * 100).toFixed(1) : 0;
 
         return (
@@ -530,7 +518,7 @@ const normalizeName = (name: string) => {
                     );
                 })}
                 
-                {targetsWithAchieved.length > 0 && (
+                {finalTargets.length > 0 && (
                     <div className="mt-4 p-4 rounded-2xl bg-orange-600/20 border border-orange-500/30">
                         <div className="flex justify-between items-center">
                             <div className="font-bold text-white text-lg">{targetPrintEmployee ? "الإجمالي المحقق" : "الإجمالي لجميع الحسابات"}</div>
@@ -554,7 +542,7 @@ const normalizeName = (name: string) => {
                     </div>
                 )}
                 
-                {targetsWithAchieved.length === 0 && <div className="text-center py-10 opacity-50 text-white">لا يوجد تارجت مسجل</div>}
+                {finalTargets.length === 0 && <div className="text-center py-10 opacity-50 text-white">لا يوجد تارجت مسجل</div>}
             </>
         );
     };
@@ -737,29 +725,19 @@ const normalizeName = (name: string) => {
         );
     };
 
-    const handleDownloadImage = async (asShare = false) => {
+    const handleDownloadImage = async (isLowQuality = false) => {
         let element = document.getElementById('current-targets-print-area');
         if (!element || element.offsetParent === null) {
             element = document.getElementById('hidden-print-area');
         }
         if (!element) return;
         try {
+            const scale = isLowQuality ? 2 : (8000 / element.offsetWidth);
             const canvas = await html2canvas(element, {
                 backgroundColor: '#111827',
-                scale: 8000 / element.offsetWidth, 
+                scale: scale, 
             });
-            const dataUrl = canvas.toDataURL('image/png', 1.0);
             
-            if (asShare && navigator.share) {
-                const blob = await new Promise(res => canvas.toBlob(res, 'image/png', 1.0));
-                if (blob) {
-                    const file = new File([blob], 'targets.png', { type: 'image/png' });
-                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                        await navigator.share({ files: [file], title: 'التارجت' });
-                        return;
-                    }
-                }
-            }
             canvas.toBlob((blob) => {
                 if (blob) {
                     const url = URL.createObjectURL(blob);
@@ -769,7 +747,7 @@ const normalizeName = (name: string) => {
                     link.click();
                     setTimeout(() => URL.revokeObjectURL(url), 100);
                 }
-            }, 'image/png', 1.0);
+            }, 'image/png', isLowQuality ? 0.8 : 1.0);
         } catch (err) {
             console.error("Failed to capture image", err);
             alert("حدث خطأ أثناء تحميل الصورة");
@@ -854,41 +832,26 @@ const normalizeName = (name: string) => {
         if (!exportStart || !exportEnd) return alert("اختر الفترة الزمنية");
         const startTS = new Date(exportStart).getTime();
         const endTS = new Date(exportEnd).getTime() + 86400000;
-        const periodSales = sales.filter(s => s.timestamp >= startTS && s.timestamp <= endTS && (!exportMarket || s.market === exportMarket));
+        const periodSales = sales.filter(s => s.timestamp >= startTS && s.timestamp <= endTS && (!exportMarket || s.market === exportMarket) && (!exportEmployee || s.employeeName === exportEmployee || s.username === exportEmployee));
         
         if (periodSales.length === 0) return alert("لا توجد مبيعات");
 
-        const itemsGrouped: Record<string, { price: number, qty: number, total: number }> = {};
-        let grandTotalQty = 0;
         let grandTotalValue = 0;
-
-        periodSales.forEach(s => {
-            (s.items || []).forEach(i => {
-                const nName = normalizeName(i.name);
-                if (/[a-zA-Z]/.test(nName)) return;
-                if (!itemsGrouped[nName]) {
-                    itemsGrouped[nName] = { price: i.price, qty: 0, total: 0 };
-                }
-                itemsGrouped[nName].qty += i.qty;
-                itemsGrouped[nName].total += (i.qty * i.price);
-                itemsGrouped[nName].price = i.price; // Keep latest price or maybe not needed if it's constant
-                grandTotalQty += i.qty;
-                grandTotalValue += (i.qty * i.price);
-            });
+        const exportData: any[] = periodSales.map(s => {
+            grandTotalValue += s.total;
+            return {
+                "اسم الموظف": s.employeeName || s.username || "System",
+                "التاريخ": s.date,
+                "اسم الماركت": s.market,
+                "إجمالي المبيعات": s.total
+            };
         });
 
-        const exportData: any[] = Object.entries(itemsGrouped).map(([name, stats]) => ({
-            "الصنف": name,
-            "سعر القطعة": stats.price,
-            "عدد القطع المباعة": stats.qty,
-            "الإجمالي": stats.total
-        }));
-
         exportData.push({
-            "الصنف": "الإجمالي العام",
-            "سعر القطعة": "",
-            "عدد القطع المباعة": grandTotalQty,
-            "الإجمالي": grandTotalValue
+            "اسم الموظف": "الإجمالي العام",
+            "التاريخ": "",
+            "اسم الماركت": "",
+            "إجمالي المبيعات": grandTotalValue
         });
 
         exportToCSV(exportData, `Sales_Report_${exportStart}_to_${exportEnd}`);
@@ -1038,7 +1001,7 @@ const normalizeName = (name: string) => {
                 {selectedSalesIds.length > 0 && (
                     <div className="flex gap-2">
                         <button onClick={() => handleShareSales(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition text-xs shadow-xl"><FileDown size={14}/> تصدير PDF</button>
-                        <button onClick={() => handleShareSales(false)} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition text-xs shadow-xl"><Share2 size={14}/> مشاركة WhatsApp</button>
+                        <button onClick={() => handleShareSales(false)} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition text-xs shadow-xl"><Download size={14}/> تحميل للهاتف</button>
                     </div>
                 )}
             </div>
@@ -1079,7 +1042,7 @@ const normalizeName = (name: string) => {
                         </div>
                         <div className="mt-4 pt-4 border-t border-white/10 flex justify-between items-center text-white">
                             <div className="flex flex-col">
-                                <span className="text-xs font-bold opacity-60 uppercase tracking-tighter">إجمالي الفاتورة:</span>
+                                <span className="text-xs font-bold opacity-60 uppercase tracking-tighter">إجمالي المبيعات:</span>
                                 <span className="text-xl font-black text-blue-400">{sale.total.toLocaleString()} ج.م</span>
                             </div>
                             {user.role === 'admin' && (
@@ -1463,6 +1426,7 @@ const normalizeName = (name: string) => {
                     <div><label className="block text-xs font-bold mb-1 opacity-60 text-white">تاريخ البداية</label><input type="date" className="w-full p-3 rounded-xl bg-gray-800 text-white border border-white/10" value={exportStart} onChange={e => setExportStart(e.target.value)} /></div>
                     <div><label className="block text-xs font-bold mb-1 opacity-60 text-white">تاريخ النهاية</label><input type="date" className="w-full p-3 rounded-xl bg-gray-800 text-white border border-white/10" value={exportEnd} onChange={e => setExportEnd(e.target.value)} /></div>
                     <div><label className="block text-xs font-bold mb-1 opacity-60 text-white">الماركت (اختياري)</label><select className="w-full p-3 rounded-xl bg-gray-800 text-white border border-white/10" value={exportMarket} onChange={e => setExportMarket(e.target.value)}><option value="">كل الماركتات</option>{markets.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
+                    <div><label className="block text-xs font-bold mb-1 opacity-60 text-white">الموظف (اختياري)</label><select className="w-full p-3 rounded-xl bg-gray-800 text-white border border-white/10" value={exportEmployee} onChange={e => setExportEmployee(e.target.value)}><option value="">كل الموظفين</option>{Array.from(new Set(sales.map(s => s.employeeName || s.username || "System"))).filter(Boolean).map(name => <option key={name} value={name}>{name}</option>)}</select></div>
                     <button onClick={handleExportPeriod} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-xl transition active:scale-95">بدء التحميل (Excel)</button>
                   </div>
                 </div>
@@ -1515,7 +1479,17 @@ const normalizeName = (name: string) => {
                                     onChange={e => setTargetPrintEmployee(e.target.value)}
                                 >
                                     <option value="">الكل</option>
-                                    {usersList.map(u => <option key={u.key} value={u.key}>{u.name}</option>)}
+                                    {usersList.filter(u => {
+                                        if (selectedTargetMonth === 'current') {
+                                            const now = new Date();
+                                            const achieved = computeAchieved(u.name, now.getFullYear(), now.getMonth(), u.key);
+                                            return achieved > 0;
+                                        } else {
+                                            const monthHistories = targetHistory[selectedTargetMonth] || [];
+                                            const h = monthHistories.find(x => x.userId === u.key || x.employeeName === u.name);
+                                            return h && h.achievedAmount > 0;
+                                        }
+                                    }).map(u => <option key={u.key} value={u.key}>{u.name}</option>)}
                                 </select>
                             </div>
                             <button 
@@ -1529,9 +1503,9 @@ const normalizeName = (name: string) => {
                                 <button 
                                     onClick={() => handleDownloadImage(true)}
                                     className="bg-green-600 hover:bg-green-500 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition h-[40px]"
-                                    title="مشاركة WhatsApp"
+                                    title="تحميل بجودة للهاتف"
                                 >
-                                    <Share2 size={14}/> WhatsApp
+                                    <Download size={14}/> للهاتف
                                 </button>
                             )}
                         </div>

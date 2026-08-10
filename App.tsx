@@ -151,17 +151,34 @@ const App: React.FC = () => {
     set(userStatusRef, { online: true, lastSeen: serverTimestamp(), name: user.name, username: user.username });
     onDisconnect(userStatusRef).set({ online: false, lastSeen: serverTimestamp(), name: user.name, username: user.username });
 
-    const unsubNotifs = onCachedValue(ref(db, `notifications/${user.username}`), `notifs_${user.username}`, (snapshot) => {
-        if(snapshot.exists()) {
+    const fetchNotifs = () => {
+        const unsubUser = onValue(ref(db, `notifications/${user.username}`), (snapshot) => {
             const data = snapshot.val();
-            const list = Object.keys(data).map(key => ({ id: key, ...data[key] })).sort((a,b) => b.timestamp - a.timestamp);
-            setNotifications(list);
-            setUnreadCount(list.filter(n => !n.isRead).length);
-        } else {
-            setNotifications([]);
-            setUnreadCount(0);
+            const list = data ? Object.keys(data).map(key => ({ id: key, notifPath: `notifications/${user.username}/${key}`, ...data[key] })) : [];
+            setNotifications(prev => {
+                const others = prev.filter(n => n.type === 'admin_alert');
+                const newAll = [...others, ...list].sort((a,b) => b.timestamp - a.timestamp);
+                setUnreadCount(newAll.filter(n => !n.isRead).length);
+                return newAll;
+            });
+        });
+
+        let unsubAdmin = () => {};
+        if (user.role === 'admin') {
+            unsubAdmin = onValue(ref(db, `notifications/admin_alerts`), (snapshot) => {
+                const data = snapshot.val();
+                const list = data ? Object.keys(data).map(key => ({ id: key, notifPath: `notifications/admin_alerts/${key}`, type: 'admin_alert', ...data[key] })) : [];
+                setNotifications(prev => {
+                    const others = prev.filter(n => n.type !== 'admin_alert');
+                    const newAll = [...others, ...list].sort((a,b) => b.timestamp - a.timestamp);
+                    setUnreadCount(newAll.filter(n => !n.isRead).length);
+                    return newAll;
+                });
+            });
         }
-    });
+        return () => { unsubUser(); unsubAdmin(); };
+    };
+    const unsubNotifs = fetchNotifs();
 
     return () => { clearTimeout(timer); unsubNotifs(); };
   }, [user?.username]);
@@ -177,12 +194,22 @@ const App: React.FC = () => {
 
   const markAsRead = (id: string) => {
     if (!user) return;
-    update(ref(db, `notifications/${user.username}/${id}`), { isRead: true });
+    const notif = notifications.find(n => n.id === id);
+    if (notif && notif.notifPath) {
+        update(ref(db, notif.notifPath), { isRead: true });
+    } else {
+        update(ref(db, `notifications/${user.username}/${id}`), { isRead: true });
+    }
   };
 
   const deleteNotif = (id: string) => {
     if (!user) return;
-    remove(ref(db, `notifications/${user.username}/${id}`));
+    const notif = notifications.find(n => n.id === id);
+    if (notif && notif.notifPath) {
+        remove(ref(db, notif.notifPath));
+    } else {
+        remove(ref(db, `notifications/${user.username}/${id}`));
+    }
     setSelectedNotif(null);
   };
 
@@ -228,7 +255,16 @@ const App: React.FC = () => {
             </button>
 
             <div className="relative">
-                <button onClick={() => setShowNotifDropdown(!showNotifDropdown)} className="relative p-2 rounded-full hover:bg-white/10">
+                <button onClick={() => {
+        setShowNotifDropdown(!showNotifDropdown);
+        if (!showNotifDropdown && user.role === 'admin') {
+            // mark all as read
+            notifications.filter(n => !n.isRead).forEach(n => {
+                if (n.notifPath) update(ref(db, n.notifPath), { isRead: true });
+            });
+            setUnreadCount(0);
+        }
+    }} className="relative p-2 rounded-full hover:bg-white/10">
                     <Bell size={20} />
                     {unreadCount > 0 && <span className="absolute top-1 right-1 bg-red-600 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full">{unreadCount}</span>}
                 </button>
@@ -244,11 +280,23 @@ const App: React.FC = () => {
                                 notifications.map(n => (
                                     <div 
                                       key={n.id} 
-                                      onClick={() => { setSelectedNotif(n); markAsRead(n.id!); setShowNotifDropdown(false); }}
+                                      onClick={() => { 
+                                          markAsRead(n.id!); 
+                                          setShowNotifDropdown(false); 
+                                          if (n.actionType === 'prices' && user.role === 'admin') {
+                                              setCurrentView('competitorReports'); 
+                                          } else {
+                                              setSelectedNotif(n);
+                                          }
+                                      }}
                                       className={`p-4 border-b border-white/5 last:border-0 hover:bg-white/5 cursor-pointer ${!n.isRead ? 'bg-blue-600/10' : ''}`}
                                     >
-                                        <div className="text-xs font-bold mb-0.5 text-white">{n.sender}</div>
-                                        <div className="text-[11px] opacity-70 line-clamp-2 text-white">{n.message}</div>
+                                        <div className="font-bold text-sm text-blue-400 mb-1">{n.sender || 'System'}</div>
+                                        <div className="text-xs text-white opacity-80 mb-2">{n.message}</div>
+                                        <div className="flex justify-between items-center text-[9px] opacity-40">
+                                            <span>{n.dateString || new Date(n.timestamp).toLocaleDateString('ar-EG')}</span>
+                                            <span>{n.timeString || new Date(n.timestamp).toLocaleTimeString('ar-EG')}</span>
+                                        </div>
                                     </div>
                                 ))
                             )}
@@ -275,10 +323,16 @@ const App: React.FC = () => {
               <button onClick={() => setSelectedNotif(null)} className="text-white/50 hover:text-white"><X size={20}/></button>
             </div>
             <div className="mb-8">
-              <div className="text-xs font-black opacity-40 uppercase mb-2">المرسل: {selectedNotif.sender}</div>
-              <div className="bg-white/5 p-4 rounded-2xl border border-white/5 text-sm leading-relaxed text-gray-200">
+              <div className="text-xs font-black opacity-40 uppercase mb-2">المرسل: {selectedNotif.sender || 'System'}</div>
+              <div className="bg-white/5 p-4 rounded-2xl border border-white/5 text-sm leading-relaxed text-gray-200 mb-4">
                 {selectedNotif.message}
               </div>
+              {selectedNotif.dateString && (
+                  <div className="flex justify-between items-center text-[10px] opacity-50 uppercase font-black bg-black/40 p-3 rounded-xl">
+                      <span>التاريخ: {selectedNotif.dateString}</span>
+                      <span>الساعة: {selectedNotif.timeString}</span>
+                  </div>
+              )}
             </div>
             <div className="flex gap-3">
               <button 
