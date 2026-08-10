@@ -23,6 +23,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme, products }) => {
     const [sales, setSales] = useState<SaleRecord[]>([]);
     const [filteredSales, setFilteredSales] = useState<SaleRecord[]>([]);
     const [selectedSalesIds, setSelectedSalesIds] = useState<string[]>([]);
+    const [visibleCount, setVisibleCount] = useState(15);
     const [selectedTargetEmployeeToShare, setSelectedTargetEmployeeToShare] = useState<string>('');
     const [usersList, setUsersList] = useState<User[]>([]);
     const [filterDate, setFilterDate] = useState('');
@@ -283,10 +284,16 @@ const normalizeName = (name: string) => {
                     }
                 }
             }
-            const link = document.createElement('a');
-            link.download = `sales_export_${new Date().getTime()}.png`;
-            link.href = dataUrl;
-            link.click();
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.download = `sales_export_${new Date().getTime()}.png`;
+                    link.href = url;
+                    link.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 100);
+                }
+            }, 'image/png', 1.0);
         } catch (err) {
             console.error("Failed to capture image", err);
             alert("حدث خطأ أثناء استخراج الصورة");
@@ -314,10 +321,16 @@ const normalizeName = (name: string) => {
                     }
                 }
             }
-            const link = document.createElement('a');
-            link.download = `target_export_${new Date().getTime()}.png`;
-            link.href = dataUrl;
-            link.click();
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.download = `target_export_${new Date().getTime()}.png`;
+                    link.href = url;
+                    link.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 100);
+                }
+            }, 'image/png', 1.0);
         } catch (err) {
             console.error("Failed to capture target image", err);
             alert("حدث خطأ أثناء استخراج الصورة");
@@ -747,10 +760,16 @@ const normalizeName = (name: string) => {
                     }
                 }
             }
-            const link = document.createElement('a');
-            link.download = `targets-${new Date().toISOString().split('T')[0]}.png`;
-            link.href = dataUrl;
-            link.click();
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.download = `targets-${new Date().toISOString().split('T')[0]}.png`;
+                    link.href = url;
+                    link.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 100);
+                }
+            }, 'image/png', 1.0);
         } catch (err) {
             console.error("Failed to capture image", err);
             alert("حدث خطأ أثناء تحميل الصورة");
@@ -803,10 +822,16 @@ const normalizeName = (name: string) => {
                     }
                 }
             }
-            const link = document.createElement('a');
-            link.download = `targets-${mKey}.png`;
-            link.href = dataUrl;
-            link.click();
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.download = `targets-${mKey}.png`;
+                    link.href = url;
+                    link.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 100);
+                }
+            }, 'image/png', 1.0);
         } catch (err) {
             console.error("Failed to capture image", err);
             alert("حدث خطأ أثناء تحميل الصورة");
@@ -820,7 +845,7 @@ const normalizeName = (name: string) => {
             "اليوم": new Date(s.timestamp).toLocaleDateString('ar-EG', { weekday: 'long' }),
             "التاريخ": s.date,
             "اسم الفرع": s.market,
-            "إجمالي مبيعات اليوم": s.total.toLocaleString() + " ج.م"
+            "إجمالي مبيعات اليوم": s.total.toLocaleString()
         }));
         exportToCSV(exportData, "Current_Sales_Log");
     };
@@ -1018,7 +1043,7 @@ const normalizeName = (name: string) => {
                 )}
             </div>
             <div className="space-y-4">
-                {filteredSales.map(sale => (
+                {filteredSales.slice(0, visibleCount).map(sale => (
                     <div key={sale.id} className="p-5 rounded-3xl border border-white/10 bg-gray-800 shadow-2xl">
                         <div className="flex justify-between items-start mb-4">
                             <div>
