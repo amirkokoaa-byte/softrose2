@@ -1,3 +1,4 @@
+import { onCachedValue } from "../firebaseCache";
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
@@ -7,17 +8,22 @@ import {
     Trash2, Edit, FileSpreadsheet, Save, X, Calendar, User as UserIcon, TrendingUp, Star, Trophy, Download, Filter, Target, History, Copy, Search, Package, ShoppingBag, Calculator, ChevronDown, ChevronUp, Printer
 } from 'lucide-react';
 import { exportToCSV } from '../utils';
+import { Share2, FileDown } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import html2canvas from 'html2canvas';
 
 interface Props {
     user: User;
     markets: string[];
     theme: string;
+    products: ProductItem[];
 }
 
-const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
+const SalesLog: React.FC<Props> = ({ user, markets, theme, products }) => {
     const [sales, setSales] = useState<SaleRecord[]>([]);
     const [filteredSales, setFilteredSales] = useState<SaleRecord[]>([]);
+    const [selectedSalesIds, setSelectedSalesIds] = useState<string[]>([]);
+    const [selectedTargetEmployeeToShare, setSelectedTargetEmployeeToShare] = useState<string>('');
     const [usersList, setUsersList] = useState<User[]>([]);
     const [filterDate, setFilterDate] = useState('');
     const [filterEmployee, setFilterEmployee] = useState('');
@@ -40,6 +46,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
 
     const [targetMarket, setTargetMarket] = useState('');
     const [targetEmployeeKey, setTargetEmployeeKey] = useState('');
+    const [targetPrintEmployee, setTargetPrintEmployee] = useState('');
     const [suggestedTarget, setSuggestedTarget] = useState(0);
     const [growthPercent, setGrowthPercent] = useState(0);
     const [finalTarget, setFinalTarget] = useState(0);
@@ -57,7 +64,8 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
     const [targetsList, setTargetsList] = useState<UserTarget[]>([]);
 
     useEffect(() => {
-        onValue(ref(db, 'sales'), (snapshot) => {
+        let unsubUsers, unsubTargets, unsubHistory;
+        const unsubSales = onCachedValue(ref(db, 'sales'), 'sales', (snapshot) => {
             const data = snapshot.val();
             if (data) {
                 let loadedSales: SaleRecord[] = Object.keys(data).map(key => ({ id: key, ...data[key] }));
@@ -69,21 +77,21 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
         });
 
         if (user.role === 'admin') {
-            onValue(ref(db, 'users'), (snap) => {
+            unsubUsers = onCachedValue(ref(db, 'users'), 'users', (snap) => {
                 if (snap.exists()) {
                     const list: User[] = [];
                     snap.forEach(child => { list.push({ key: child.key!, ...child.val() }); });
                     setUsersList(list);
                 }
             });
-            onValue(ref(db, 'targets'), snap => {
+            unsubTargets = onCachedValue(ref(db, 'targets'), 'targets', snap => {
                 if (snap.exists()) {
                     setTargetsList(Object.values(snap.val()));
                 } else {
                     setTargetsList([]);
                 }
             });
-            onValue(ref(db, 'target_history'), snap => {
+            unsubHistory = onCachedValue(ref(db, 'target_history'), 'target_history', snap => {
                 if (snap.exists()) {
                     const data: TargetHistory[] = [];
                     snap.forEach(userSnap => {
@@ -97,6 +105,12 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                 }
             });
         }
+        return () => {
+            unsubSales();
+            if (unsubUsers) unsubUsers();
+            if (unsubTargets) unsubTargets();
+            if (unsubHistory) unsubHistory();
+        };
     }, [user]);
 
     useEffect(() => {
@@ -144,11 +158,49 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
     }, [suggestedTarget, growthPercent]);
 
     // استخراج قائمة الأصناف الفريدة والأسواق التي بها مبيعات
+const normalizeName = (name: string) => {
+        if (!name) return '';
+        return name.trim().replace(/\s+/g, ' ');
+    };
+
     const uniqueItems = useMemo(() => {
         const set = new Set<string>();
-        sales.forEach(s => s.items?.forEach(i => set.add(i.name)));
+        sales.forEach(s => s.items?.forEach(i => set.add(normalizeName(i.name))));
         return Array.from(set).sort();
     }, [sales]);
+
+    const groupedItems = useMemo(() => {
+        const groups: Record<string, string[]> = {
+            'Facial': [],
+            'Kitchen': [],
+            'Toilet': [],
+            'Dolphin': [],
+            'Uncategorized': []
+        };
+        
+        uniqueItems.forEach(itemName => {
+            // إخفاء منتجات Soft Rose باللغة الإنجليزية من القوائم المنبثقة
+            if (/[a-zA-Z]/.test(itemName)) return;
+            const product = products.find(p => normalizeName(p.name) === itemName);
+            const cat = product?.category || 'Uncategorized';
+            if (groups[cat]) {
+                groups[cat].push(itemName);
+            } else {
+                if (!groups['Uncategorized']) groups['Uncategorized'] = [];
+                groups['Uncategorized'].push(itemName);
+            }
+        });
+        
+        return groups;
+    }, [uniqueItems, products]);
+
+    const categoryLabels: Record<string, string> = {
+        'Facial': 'مناديل السحب (Facial)',
+        'Kitchen': 'مناديل المطبخ (Kitchen)',
+        'Toilet': 'تواليت (Toilet)',
+        'Dolphin': 'دولفن (Dolphin)',
+        'Uncategorized': 'أصناف أخرى'
+    };
 
     const marketsWithSales = useMemo(() => {
         const set = new Set<string>();
@@ -161,6 +213,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
         totalQty: number; 
         totalValue: number; 
         itemsGrouped: Record<string, { price: number; qty: number; total: number }>;
+        categoryGrouped: Record<string, number>;
     }>(() => {
         let results = sales;
         if (reportMarket !== 'all') results = results.filter(s => s.market === reportMarket);
@@ -176,24 +229,100 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
         let totalQty = 0;
         let totalValue = 0;
         const itemsGrouped: Record<string, { price: number, qty: number, total: number }> = {};
+        const categoryGrouped: Record<string, number> = {};
 
         results.forEach(s => {
             (s.items || []).forEach(i => {
-                if (reportItem === 'all' || i.name === reportItem) {
+                const nName = normalizeName(i.name);
+                // إخفاء منتجات Soft Rose باللغة الإنجليزية من التقرير
+                if (/[a-zA-Z]/.test(nName)) return;
+                if (reportItem === 'all' || nName === reportItem) {
                     totalQty += i.qty;
                     totalValue += (i.qty * i.price);
                     
-                    if (!itemsGrouped[i.name]) {
-                        itemsGrouped[i.name] = { price: i.price, qty: 0, total: 0 };
+                    if (!itemsGrouped[nName]) {
+                        itemsGrouped[nName] = { price: i.price, qty: 0, total: 0 };
                     }
-                    itemsGrouped[i.name].qty += i.qty;
-                    itemsGrouped[i.name].total += (i.qty * i.price);
+                    itemsGrouped[nName].qty += i.qty;
+                    itemsGrouped[nName].total += (i.qty * i.price);
+                    
+                    // compute category
+                    const prod = products.find(p => normalizeName(p.name) === nName);
+                    const cat = prod?.category || 'Uncategorized';
+                    if (!categoryGrouped[cat]) categoryGrouped[cat] = 0;
+                    categoryGrouped[cat] += (i.qty * i.price);
                 }
             });
         });
 
-        return { totalQty, totalValue, itemsGrouped };
-    }, [sales, reportItem, reportMarket, reportStart, reportEnd]);
+        return { totalQty, totalValue, itemsGrouped, categoryGrouped };
+    }, [sales, reportItem, reportMarket, reportStart, reportEnd, products]);
+
+    
+    const handleShareSales = async (asPdf: boolean) => {
+        let element = document.getElementById('selected-sales-print-area');
+        if (!element) return;
+        try {
+            const canvas = await html2canvas(element, {
+                backgroundColor: '#111827',
+                scale: 8000 / 1000, // 8K resolution assuming 1000px container width
+                width: 1000
+            });
+            const dataUrl = canvas.toDataURL('image/png', 1.0);
+            
+            // if we need pdf we could use jspdf, but they asked for 8K image exported.
+            // "يتم التقاط صورة للعناصر المحددة وإرسالها أو تصديرها كصورة فائقة الجودة"
+            // So we'll just download the image for both cases, or use Share API for Share.
+            if (!asPdf && navigator.share) {
+                const blob = await new Promise(res => canvas.toBlob(res, 'image/png', 1.0));
+                if (blob) {
+                    const file = new File([blob], 'sales.png', { type: 'image/png' });
+                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                        await navigator.share({ files: [file], title: 'مبيعات' });
+                        return;
+                    }
+                }
+            }
+            const link = document.createElement('a');
+            link.download = `sales_export_${new Date().getTime()}.png`;
+            link.href = dataUrl;
+            link.click();
+        } catch (err) {
+            console.error("Failed to capture image", err);
+            alert("حدث خطأ أثناء استخراج الصورة");
+        }
+    };
+    
+    const handleShareTarget = async () => {
+        let element = document.getElementById('selected-target-print-area');
+        if (!element) return;
+        try {
+            const canvas = await html2canvas(element, {
+                backgroundColor: '#111827',
+                scale: 8000 / 1000,
+                width: 1000
+            });
+            const dataUrl = canvas.toDataURL('image/png', 1.0);
+            
+            if (navigator.share) {
+                const blob = await new Promise(res => canvas.toBlob(res, 'image/png', 1.0));
+                if (blob) {
+                    const file = new File([blob], 'target.png', { type: 'image/png' });
+                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                        await navigator.share({ files: [file], title: 'التارجت' });
+                        return;
+                    }
+                }
+            }
+            const link = document.createElement('a');
+            link.download = `target_export_${new Date().getTime()}.png`;
+            link.href = dataUrl;
+            link.click();
+        } catch (err) {
+            console.error("Failed to capture target image", err);
+            alert("حدث خطأ أثناء استخراج الصورة");
+        }
+    };
 
     const handleUpdateActiveTarget = async () => {
         if (!targetEmployeeKey) return alert('اختر الموظف أولاً');
@@ -247,7 +376,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                 await update(ref(db, `target_history/${userId}/${historical.id}`), { targetAmount: Number(newVal), isDeleted: null });
             } else {
                 await push(ref(db, `target_history/${userId}`), {
-                    userId, employeeName, month: monthKey, targetAmount: Number(newVal), achievedAmount: achieved
+                    userId: userId || 'unknown', employeeName: employeeName || 'unknown', month: monthKey, targetAmount: Number(newVal), achievedAmount: achieved
                 });
             }
             alert("تم التعديل بنجاح");
@@ -260,7 +389,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                 await update(ref(db, `target_history/${userId}/${historical.id}`), { isDeleted: true });
             } else {
                 await push(ref(db, `target_history/${userId}`), {
-                    userId, employeeName, month: monthKey, targetAmount: 0, achievedAmount: 0, isDeleted: true
+                    userId: userId || 'unknown', employeeName: employeeName || 'unknown', month: monthKey, targetAmount: 0, achievedAmount: 0, isDeleted: true
                 });
             }
             alert("تم الحذف بنجاح");
@@ -341,13 +470,17 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
             return { ...t, achieved, activeMarkets };
         });
 
-        const totalTarget = targetsWithAchieved.reduce((sum, t) => sum + t.finalTarget, 0);
+        let finalTargets = targetsWithAchieved;
+        if (targetPrintEmployee) {
+            finalTargets = finalTargets.filter(t => t.userId === targetPrintEmployee);
+        }
+        const totalTarget = finalTargets.reduce((sum, t) => sum + t.finalTarget, 0);
         const totalAchieved = targetsWithAchieved.reduce((sum, t) => sum + t.achieved, 0);
         const totalPerc = totalTarget > 0 ? ((totalAchieved / totalTarget) * 100).toFixed(1) : 0;
 
         return (
             <>
-                {targetsWithAchieved.map(t => {
+                {finalTargets.map(t => {
                     const perc = t.finalTarget > 0 ? ((t.achieved / t.finalTarget) * 100).toFixed(1) : 0;
                     return (
                         <div key={t.userId} className="bg-black/30 border border-white/5 p-4 rounded-2xl">
@@ -362,8 +495,8 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                                     )}
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <button onClick={() => handleEditCurrentTarget(t.userId, t.finalTarget)} className="p-1.5 text-blue-400 hover:bg-blue-500/20 rounded-lg transition" title="تعديل"><Edit size={16}/></button>
-                                    <button onClick={() => handleDeleteCurrentTarget(t.userId)} className="p-1.5 text-red-400 hover:bg-red-500/20 rounded-lg transition" title="حذف"><Trash2 size={16}/></button>
+                                    <button data-html2canvas-ignore="true" onClick={() => handleEditCurrentTarget(t.userId, t.finalTarget)} className="p-1.5 text-blue-400 hover:bg-blue-500/20 rounded-lg transition" title="تعديل"><Edit size={16}/></button>
+                                    <button data-html2canvas-ignore="true" onClick={() => handleDeleteCurrentTarget(t.userId)} className="p-1.5 text-red-400 hover:bg-red-500/20 rounded-lg transition" title="حذف"><Trash2 size={16}/></button>
                                     <div className="text-left flex flex-col ml-3 pl-3 border-l border-white/10">
                                         <span className="text-xs opacity-60 text-white">نسبة التحقيق</span>
                                         <span className="font-black text-blue-400">{perc}%</span>
@@ -387,7 +520,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                 {targetsWithAchieved.length > 0 && (
                     <div className="mt-4 p-4 rounded-2xl bg-orange-600/20 border border-orange-500/30">
                         <div className="flex justify-between items-center">
-                            <div className="font-bold text-white text-lg">الإجمالي لجميع الحسابات</div>
+                            <div className="font-bold text-white text-lg">{targetPrintEmployee ? "الإجمالي المحقق" : "الإجمالي لجميع الحسابات"}</div>
                             <div className="flex items-center gap-2">
                                 <div className="text-left flex flex-col pl-3 border-l border-white/20">
                                     <span className="text-xs opacity-70 text-white">متوسط النسبة</span>
@@ -486,6 +619,14 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
             }
 
             let achievedAmount = computeAchieved(c.employeeName, year, month, c.userId);
+            const start = new Date(year, month, 1).getTime();
+            const end = new Date(year, month + 1, 0, 23, 59, 59).getTime();
+            const employeeSales = sales.filter(s => {
+                const nameMatches = s.employeeName?.trim().toLowerCase() === c.employeeName?.trim().toLowerCase();
+                const userMatches = c.userId && s.username && (s.username.replace(/[.#$/\[\]]/g, "_") === c.userId || s.username === c.userId);
+                return (nameMatches || userMatches) && s.timestamp >= start && s.timestamp <= end;
+            });
+            const activeMarkets = Array.from(new Set(employeeSales.map(s => s.market))).sort().join('، ');
             if (mKey === "2026-06" && targetNames.includes(c.employeeName)) {
                 achievedAmount = computeAchieved(c.employeeName, 2026, 5, c.userId); // June
             }
@@ -497,15 +638,19 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                 employeeName: c.employeeName,
                 market: c.market,
                 targetAmount,
-                achievedAmount
+                achievedAmount,
+                activeMarkets
             };
-        }).filter(Boolean) as { userId: string; employeeName: string; market: string; targetAmount: number; achievedAmount: number }[];
+        }).filter(Boolean) as { userId: string; employeeName: string; market: string; targetAmount: number; achievedAmount: number; activeMarkets?: string; }[];
 
         return resultList;
     };
 
     const renderPastMonthTargetsList = (mKey: string) => {
-        const dataList = getPastMonthTargetsData(mKey);
+        let dataList = getPastMonthTargetsData(mKey);
+        if (targetPrintEmployee) {
+            dataList = dataList.filter(t => t.userId === targetPrintEmployee);
+        }
 
         const totalTarget = dataList.reduce((sum, item) => sum + item.targetAmount, 0);
         const totalAchieved = dataList.reduce((sum, item) => sum + item.achievedAmount, 0);
@@ -527,6 +672,11 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                                 <div className="min-w-[160px] max-w-[200px] flex flex-col justify-center text-right pr-2">
                                     <div className="font-bold text-white text-sm break-words whitespace-normal">{item.employeeName}</div>
                                     <div className="text-[11px] text-blue-300 mt-1 font-medium break-words whitespace-normal">{item.market}</div>
+                                    {item.activeMarkets && (
+                                        <div className="text-[11px] text-blue-300 mt-1 font-medium break-words whitespace-normal">
+                                            الفروع: {item.activeMarkets}
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="flex-1 flex justify-center gap-6">
                                     <div className="flex flex-col items-center">
@@ -550,7 +700,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                 {dataList.length > 0 && (
                     <div className="mt-4 p-4 rounded-2xl bg-orange-600/20 border border-orange-500/30">
                         <div className="flex justify-between items-center">
-                            <div className="font-bold text-white text-lg">الإجمالي لجميع الحسابات</div>
+                            <div className="font-bold text-white text-lg">{targetPrintEmployee ? "الإجمالي المحقق" : "الإجمالي لجميع الحسابات"}</div>
                             <div className="flex items-center gap-2">
                                 <div className="text-left flex flex-col pl-3 border-l border-white/20">
                                     <span className="text-xs opacity-70 text-white">متوسط النسبة</span>
@@ -574,7 +724,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
         );
     };
 
-    const handleDownloadImage = async () => {
+    const handleDownloadImage = async (asShare = false) => {
         let element = document.getElementById('current-targets-print-area');
         if (!element || element.offsetParent === null) {
             element = document.getElementById('hidden-print-area');
@@ -582,10 +732,21 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
         if (!element) return;
         try {
             const canvas = await html2canvas(element, {
-                backgroundColor: '#111827', // Tailwind bg-gray-900
-                scale: 2,
+                backgroundColor: '#111827',
+                scale: 8000 / element.offsetWidth, 
             });
-            const dataUrl = canvas.toDataURL('image/png');
+            const dataUrl = canvas.toDataURL('image/png', 1.0);
+            
+            if (asShare && navigator.share) {
+                const blob = await new Promise(res => canvas.toBlob(res, 'image/png', 1.0));
+                if (blob) {
+                    const file = new File([blob], 'targets.png', { type: 'image/png' });
+                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                        await navigator.share({ files: [file], title: 'التارجت' });
+                        return;
+                    }
+                }
+            }
             const link = document.createElement('a');
             link.download = `targets-${new Date().toISOString().split('T')[0]}.png`;
             link.href = dataUrl;
@@ -622,15 +783,26 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
         return targets;
     };
 
-    const handleDownloadPastMonthImage = async (mKey: string) => {
-        const element = document.getElementById(`past-month-${mKey}`);
+    const handleDownloadPastMonthImage = async (mKey: string, asShare = false) => {
+        const element = document.getElementById('past-targets-print-area-' + mKey) || document.getElementById('current-targets-print-area');
         if (!element) return;
         try {
             const canvas = await html2canvas(element, {
-                backgroundColor: '#1f2937', // bg-gray-800
-                scale: 2,
+                backgroundColor: '#111827',
+                scale: 8000 / element.offsetWidth,
             });
-            const dataUrl = canvas.toDataURL('image/png');
+            const dataUrl = canvas.toDataURL('image/png', 1.0);
+            
+            if (asShare && navigator.share) {
+                const blob = await new Promise(res => canvas.toBlob(res, 'image/png', 1.0));
+                if (blob) {
+                    const file = new File([blob], 'targets_' + mKey + '.png', { type: 'image/png' });
+                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                        await navigator.share({ files: [file], title: 'تارجت ' + mKey });
+                        return;
+                    }
+                }
+            }
             const link = document.createElement('a');
             link.download = `targets-${mKey}.png`;
             link.href = dataUrl;
@@ -667,12 +839,14 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
 
         periodSales.forEach(s => {
             (s.items || []).forEach(i => {
-                if (!itemsGrouped[i.name]) {
-                    itemsGrouped[i.name] = { price: i.price, qty: 0, total: 0 };
+                const nName = normalizeName(i.name);
+                if (/[a-zA-Z]/.test(nName)) return;
+                if (!itemsGrouped[nName]) {
+                    itemsGrouped[nName] = { price: i.price, qty: 0, total: 0 };
                 }
-                itemsGrouped[i.name].qty += i.qty;
-                itemsGrouped[i.name].total += (i.qty * i.price);
-                itemsGrouped[i.name].price = i.price; // Keep latest price or maybe not needed if it's constant
+                itemsGrouped[nName].qty += i.qty;
+                itemsGrouped[nName].total += (i.qty * i.price);
+                itemsGrouped[nName].price = i.price; // Keep latest price or maybe not needed if it's constant
                 grandTotalQty += i.qty;
                 grandTotalValue += (i.qty * i.price);
             });
@@ -737,15 +911,23 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
     const getStarOfMonth = () => {
         const now = new Date();
         const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-        const end = new Date(now.getFullYear(), now.getMonth(), 30).getTime();
+        const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).getTime(); // fixing to end of month
         const currentMonthSales = sales.filter(s => s.timestamp >= start && s.timestamp <= end);
         const totals: Record<string, number> = {};
         currentMonthSales.forEach(s => totals[s.employeeName] = (totals[s.employeeName] || 0) + s.total);
         const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]);
-        return sorted.length > 0 ? { name: sorted[0][0], total: sorted[0][1] } : null;
+        
+        let result: any = null;
+        if (sorted.length > 0) {
+            result = { 
+                first: { name: sorted[0][0], total: sorted[0][1] },
+                second: sorted.length > 1 ? { name: sorted[1][0], total: sorted[1][1] } : null
+            };
+        }
+        return result;
     };
 
-    const star = getStarOfMonth();
+    const stars = getStarOfMonth();
 
     return (
         <div className="space-y-6">
@@ -780,16 +962,35 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                 </div>
             )}
 
-            {star && (
-                <div className="bg-[#808080] p-6 rounded-3xl border border-white/20 shadow-2xl flex flex-col items-center justify-center space-y-2 relative overflow-hidden group">
+            {stars && (
+                <div className="bg-[#808080] p-6 rounded-3xl border border-white/20 shadow-2xl relative overflow-hidden group">
                     <div className="absolute -right-4 -top-4 opacity-10 group-hover:rotate-12 transition-transform duration-700"><Trophy size={120} /></div>
-                    <Star className="text-yellow-400 animate-pulse" size={32} fill="currentColor" />
-                    <h3 className="text-xl font-black text-white uppercase tracking-widest">نجم الشهر الحالي</h3>
-                    <div className="text-3xl font-black text-white">{star.name}</div>
-                    <div className="text-sm font-bold opacity-80 text-white">إجمالي مبيعات الشهر: <span className="text-green-300 font-black">{star.total.toLocaleString()} ج.م</span></div>
+                    <div className="text-center mb-6 relative z-10">
+                        <Trophy className="text-yellow-400 animate-pulse mx-auto mb-2" size={40} />
+                        <h3 className="text-xl font-black text-white uppercase tracking-widest">نجوم الشهر الحالي</h3>
+                    </div>
+                    
+                    <div className="flex flex-col md:flex-row justify-center items-center gap-6 relative z-10">
+                        {/* المركز الأول */}
+                        <div className="flex flex-col items-center bg-white/10 p-4 rounded-2xl border border-yellow-400/50 min-w-[200px]">
+                            <div className="text-yellow-400 text-sm font-black mb-1">المركز الأول</div>
+                            <div className="text-2xl font-black text-white">{stars.first.name}</div>
+                            <div className="text-sm font-bold opacity-80 text-white mt-2">مبيعات: <span className="text-green-300 font-black">{stars.first.total.toLocaleString()} ج.م</span></div>
+                        </div>
+
+                        {/* المركز الثاني */}
+                        {stars.second && (
+                            <div className="flex flex-col items-center bg-white/5 p-4 rounded-2xl border border-gray-400/50 min-w-[200px] md:scale-95">
+                                <div className="text-gray-300 text-sm font-black mb-1">المركز الثاني</div>
+                                <div className="text-xl font-black text-white">{stars.second.name}</div>
+                                <div className="text-sm font-bold opacity-80 text-white mt-2">مبيعات: <span className="text-green-300 font-black">{stars.second.total.toLocaleString()} ج.م</span></div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
 
+            
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {user.role === 'admin' && <input type="date" className="p-3 rounded-xl bg-gray-700 text-white border border-white/20" value={filterDate} onChange={e => setFilterDate(e.target.value)} />}
                 <input type="text" placeholder="بحث باسم الموظف..." className="p-3 rounded-xl bg-gray-700 text-white border border-white/10 text-xs" value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)} />
@@ -798,13 +999,38 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                     {markets.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
             </div>
-
+            
+            <div className="flex items-center justify-between bg-gray-800 p-4 rounded-2xl border border-white/10 shadow-lg">
+                <div className="flex items-center gap-2">
+                    <input type="checkbox" id="selectAll" className="w-5 h-5 accent-blue-500 rounded" 
+                           checked={filteredSales.length > 0 && selectedSalesIds.length === filteredSales.length}
+                           onChange={e => {
+                               if (e.target.checked) setSelectedSalesIds(filteredSales.map(s => s.id));
+                               else setSelectedSalesIds([]);
+                           }} />
+                    <label htmlFor="selectAll" className="text-white font-bold cursor-pointer">تحديد الكل ({filteredSales.length})</label>
+                </div>
+                {selectedSalesIds.length > 0 && (
+                    <div className="flex gap-2">
+                        <button onClick={() => handleShareSales(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition text-xs shadow-xl"><FileDown size={14}/> تصدير PDF</button>
+                        <button onClick={() => handleShareSales(false)} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition text-xs shadow-xl"><Share2 size={14}/> مشاركة WhatsApp</button>
+                    </div>
+                )}
+            </div>
             <div className="space-y-4">
                 {filteredSales.map(sale => (
                     <div key={sale.id} className="p-5 rounded-3xl border border-white/10 bg-gray-800 shadow-2xl">
                         <div className="flex justify-between items-start mb-4">
                             <div>
-                                <div className="font-bold text-xl text-blue-400">{sale.market}</div>
+                                <div className="flex items-center gap-3">
+        <input type="checkbox" className="w-5 h-5 accent-blue-500 rounded"
+               checked={selectedSalesIds.includes(sale.id)} 
+               onChange={e => {
+                   if (e.target.checked) setSelectedSalesIds(prev => [...prev, sale.id]);
+                   else setSelectedSalesIds(prev => prev.filter(id => id !== sale.id));
+               }} />
+        <div className="font-bold text-xl text-blue-400">{sale.market}</div>
+    </div>
                                 <div className="flex flex-wrap items-center gap-3 text-[10px] opacity-60 font-bold mt-1 text-white">
                                     <span className="flex items-center gap-1"><Calendar size={12}/> {new Date(sale.timestamp).toLocaleDateString('ar-EG', { weekday: 'long' })} - {sale.date}</span>
                                     <span className="flex items-center gap-1"><UserIcon size={12}/> {sale.employeeName}</span>
@@ -860,7 +1086,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                                     <input 
                                         type="text" 
                                         className="w-full bg-gray-800 text-white p-3 rounded-xl border border-white/10 text-xs font-bold"
-                                        value={item.name}
+                                        value={item.name || ''}
                                         onChange={e => updateEditingItem(idx, 'name', e.target.value)}
                                         placeholder="اسم الصنف"
                                     />
@@ -870,7 +1096,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                                             <input 
                                                 type="number" 
                                                 className="w-full bg-gray-800 text-white p-3 rounded-xl border border-white/10 text-center font-black"
-                                                value={item.price}
+                                                value={item.price || ''}
                                                 onChange={e => updateEditingItem(idx, 'price', parseFloat(e.target.value) || 0)}
                                             />
                                         </div>
@@ -879,7 +1105,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                                             <input 
                                                 type="number" 
                                                 className="w-full bg-gray-800 text-white p-3 rounded-xl border border-white/10 text-center font-black"
-                                                value={item.qty}
+                                                value={item.qty || ''}
                                                 onChange={e => updateEditingItem(idx, 'qty', parseFloat(e.target.value) || 0)}
                                             />
                                         </div>
@@ -1118,7 +1344,15 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                                 <label className="block text-[10px] font-black opacity-40 uppercase mb-1 text-white">الأصناف</label>
                                 <select className="w-full p-3 rounded-xl bg-[#808080] text-white border border-white/10 text-xs font-bold" value={reportItem} onChange={e => setReportItem(e.target.value)}>
                                     <option value="all">كل الأصناف</option>
-                                    {uniqueItems.map(name => <option key={name} value={name}>{name}</option>)}
+                                    {Object.entries(groupedItems).map(([cat, items]) => {
+                                        if (items.length === 0) return null;
+                                        const label = categoryLabels[cat] || cat;
+                                        return (
+                                            <optgroup key={cat} label={label}>
+                                                {items.map(name => <option key={name} value={name}>{name}</option>)}
+                                            </optgroup>
+                                        );
+                                    })}
                                 </select>
                             </div>
                             <div>
@@ -1219,7 +1453,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                             <button onClick={() => { setShowCurrentTargetsModal(false); setSelectedTargetMonth('current'); }} className="text-white/50 hover:text-white"><X size={20}/></button>
                         </div>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-4 items-end">
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-4 items-end">
                             <div className="md:col-span-1">
                                 <label className="block text-[10px] font-black opacity-50 uppercase mb-1 text-white">التارجت السابق</label>
                                 <select 
@@ -1248,14 +1482,33 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                             >
                                 <Target size={14}/> الشهر الحالي
                             </button>
-
+                            <div className="md:col-span-1">
+                                <label className="block text-[10px] font-black opacity-50 uppercase mb-1 text-white">تحديد اسم</label>
+                                <select 
+                                    className="w-full p-2.5 rounded-xl bg-gray-800 text-white border border-white/10 text-xs font-bold"
+                                    value={targetPrintEmployee} 
+                                    onChange={e => setTargetPrintEmployee(e.target.value)}
+                                >
+                                    <option value="">الكل</option>
+                                    {usersList.map(u => <option key={u.key} value={u.key}>{u.name}</option>)}
+                                </select>
+                            </div>
                             <button 
-                                onClick={handleDownloadImage}
+                                onClick={() => handleDownloadImage(false)}
                                 className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition h-[40px]"
                                 title="تحميل صورة"
                             >
-                                <Printer size={14}/> تحميل كصورة
+                                <Printer size={14}/> تحميل
                             </button>
+                            {targetPrintEmployee && (
+                                <button 
+                                    onClick={() => handleDownloadImage(true)}
+                                    className="bg-green-600 hover:bg-green-500 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition h-[40px]"
+                                    title="مشاركة WhatsApp"
+                                >
+                                    <Share2 size={14}/> WhatsApp
+                                </button>
+                            )}
                         </div>
 
                         <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
@@ -1351,6 +1604,95 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme }) => {
                     </div>
                 </div>
             )}
+            
+            {/* Hidden Print Area for Selected Sales (Phase 1) */}
+            <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
+                <div id="selected-sales-print-area" className="w-[1000px] p-8 bg-gray-900 space-y-4 rounded-3xl" style={{ direction: 'rtl' }}>
+                    <div className="text-center mb-6 border-b border-white/10 pb-4">
+                        <h2 className="text-3xl font-black text-white">تقرير مبيعات محددة</h2>
+                        <p className="text-gray-400 mt-2 text-lg">{new Date().toLocaleDateString('ar-EG')}</p>
+                    </div>
+                    <div className="space-y-4">
+                        {sales.filter(s => selectedSalesIds.includes(s.id)).map(sale => (
+                            <div key={sale.id} className="p-5 rounded-3xl border border-white/20 bg-gray-800 shadow-2xl">
+                                <div>
+                                    <div className="font-bold text-2xl text-blue-400 mb-2">{sale.market}</div>
+                                    <div className="flex flex-wrap items-center gap-4 text-sm opacity-80 font-bold mt-1 text-white mb-4">
+                                        <span className="flex items-center gap-1"><Calendar size={16}/> {new Date(sale.timestamp).toLocaleDateString('ar-EG', { weekday: 'long' })} - {sale.date}</span>
+                                        <span className="flex items-center gap-1"><UserIcon size={16}/> {sale.employeeName}</span>
+                                    </div>
+                                </div>
+                                <div className="overflow-hidden rounded-2xl bg-black/40 border border-white/10">
+                                    <table className="w-full text-base text-center">
+                                        <thead className="bg-white/10 text-white/70">
+                                            <tr><th className="py-3 px-4 text-right text-white">الصنف</th><th className="py-3 text-white">السعر</th><th className="py-3 text-white">الكمية</th><th className="py-3 px-4 text-white">المجموع</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            {(sale.items || []).map((item, idx) => (
+                                                <tr key={idx} className="border-t border-white/5">
+                                                    <td className="py-3 px-4 text-right text-gray-200">{item.name}</td>
+                                                    <td className="py-3 text-gray-400">{item.price}</td>
+                                                    <td className="py-3 font-bold text-white bg-white/5">{item.qty}</td>
+                                                    <td className="py-3 px-4 font-bold text-blue-300">{(item.qty * item.price).toLocaleString()} <span className="text-xs">ج.م</span></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                        <tfoot className="bg-blue-600/20 border-t border-blue-500/30">
+                                            <tr><td colSpan={3} className="py-4 px-4 text-left font-black text-white text-lg">الإجمالي:</td><td className="py-4 px-4 font-black text-blue-400 text-xl">{sale.total.toLocaleString()} <span className="text-sm">ج.م</span></td></tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                
+                <div id="selected-target-print-area" className="w-[1000px] p-8 bg-gray-900 rounded-3xl" style={{ direction: 'rtl' }}>
+                    <div className="text-center mb-6 border-b border-white/10 pb-4">
+                        <h2 className="text-3xl font-black text-white">تقرير التارجت للموظف</h2>
+                    </div>
+                    <div className="space-y-4">
+                        {targetsList.filter(t => t.userId === selectedTargetEmployeeToShare).map(t => {
+                            const now = new Date();
+                            const achieved = computeAchieved(t.employeeName, now.getFullYear(), now.getMonth(), t.userId);
+                            const ratio = t.finalTarget > 0 ? (achieved / t.finalTarget) * 100 : 0;
+                            const remaining = Math.max(0, t.finalTarget - achieved);
+                            return (
+                            <div key={t.userId} className="p-6 bg-gray-800 rounded-2xl border border-white/20">
+                                <div className="flex items-center gap-4 mb-4">
+                                    <div className="w-16 h-16 rounded-full bg-blue-500 flex items-center justify-center text-white text-3xl font-bold shadow-lg">
+                                        {t.employeeName.charAt(0)}
+                                    </div>
+                                    <div>
+                                        <div className="text-2xl font-bold text-white">{t.employeeName}</div>
+                                        <div className="text-lg text-blue-400">{t.market}</div>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="bg-black/40 p-4 rounded-xl border border-white/5">
+                                        <div className="text-gray-400 text-sm mb-1">التارجت المطلوب</div>
+                                        <div className="text-3xl font-black text-white">{t.finalTarget.toLocaleString()} <span className="text-sm text-gray-500">ج.م</span></div>
+                                    </div>
+                                    <div className="bg-blue-900/30 p-4 rounded-xl border border-blue-500/20">
+                                        <div className="text-blue-300 text-sm mb-1">المُحقق</div>
+                                        <div className="text-3xl font-black text-blue-400">{achieved.toLocaleString()} <span className="text-sm text-blue-500/50">ج.م</span></div>
+                                    </div>
+                                </div>
+                                <div className="mt-6">
+                                    <div className="flex justify-between text-sm font-bold text-white mb-2">
+                                        <span>نسبة الإنجاز</span>
+                                        <span className={ratio >= 100 ? 'text-green-400' : 'text-blue-400'}>{ratio.toFixed(1)}%</span>
+                                    </div>
+                                    <div className="w-full h-4 bg-gray-900 rounded-full overflow-hidden border border-white/5">
+                                        <div className={`h-full transition-all duration-1000 ${ratio >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(ratio, 100)}%` }} />
+                                    </div>
+                                </div>
+                            </div>
+                        )})}
+                    </div>
+                </div>
+            </div>
+
             {/* Hidden Print Area for html2canvas */}
             <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
                 <div id="hidden-print-area" className="w-[600px] p-6 bg-gray-900 space-y-2">

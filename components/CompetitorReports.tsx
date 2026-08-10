@@ -1,20 +1,23 @@
+import { onCachedValue } from "../firebaseCache";
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
 import { ref, onValue, remove, update, push } from "firebase/database";
 import { User, CompetitorPrice } from '../types';
 import { exportToCSV, exportToExcel } from '../utils';
-import { COMPANIES } from '../constants';
+import { COMPANIES, FINE_FACIAL, FINE_KITCHEN, FINE_TOILET, ZEINA_FACIAL, ZEINA_KITCHEN, ZEINA_TOILET, PAPIA_FACIAL, PAPIA_KITCHEN, PAPIA_TOILET, WHITE_FACIAL, WHITE_KITCHEN, WHITE_TOILET } from '../constants';
 import { Trash2, Edit, Save, X, FileSpreadsheet, User as UserIcon, Calendar, Building, Scale, Search, Filter, Plus } from 'lucide-react';
 
 interface Props {
     user: User;
     markets: string[];
     theme: string;
+    products?: any[];
 }
 
-const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
+const CompetitorReports: React.FC<Props> = ({ user, markets, theme, products = [] }) => {
     const [data, setData] = useState<CompetitorPrice[]>([]);
+    const [competitorProductsDB, setCompetitorProductsDB] = useState<any>({});
     const [selectedMarket, setSelectedMarket] = useState('');
     const [selectedCompany, setSelectedCompany] = useState('');
     const [editingReport, setEditingReport] = useState<CompetitorPrice | null>(null);
@@ -27,7 +30,11 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
     const [compProduct, setCompProduct] = useState('all');
 
     useEffect(() => {
-        onValue(ref(db, 'settings/companies'), snapshot => {
+        const unsubProducts = onCachedValue(ref(db, 'settings/competitor_products'), 'settings_competitor_products', snap => {
+            if (snap.exists()) setCompetitorProductsDB(snap.val());
+            else setCompetitorProductsDB({});
+        });
+        const unsub = onCachedValue(ref(db, 'settings/companies'), 'settings_companies', snapshot => {
             if (snapshot.exists()) {
                 const companies = Object.values(snapshot.val()).map((c: any) => {
                     if (typeof c === 'string') return c;
@@ -45,12 +52,13 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
                 setCustomCompanies([]);
             }
         });
+        return () => { unsub(); unsubProducts(); };
     }, []);
 
     const allCompanies = Array.from(new Set([...COMPANIES, ...customCompanies]));
 
     useEffect(() => {
-        onValue(ref(db, 'competitor_prices'), s => {
+        const unsub = onCachedValue(ref(db, 'competitor_prices'), 'competitor_prices', s => {
             if(s.exists()) {
                 let arr = Object.keys(s.val()).map(key => ({
                     id: key,
@@ -84,6 +92,8 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
             if (record.company === compCompany) {
                 if (compMarket === 'all' || record.market === compMarket) {
                     record.items.forEach(item => {
+                        // إخفاء منتجات Soft Rose الإنجليزية من نتائج المقارنة الشاملة
+                        if (compCompany === 'Soft Rose' && /[a-zA-Z]/.test(item.name)) return;
                         if (compProduct === 'all' || item.name === compProduct) {
                             const key = `${record.market}_${item.name}`;
                             // إذا لم يتم تسجيل أحدث سعر لهذا المنتج في هذا الماركت بعد
@@ -113,8 +123,59 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
         return Array.from(set).sort();
     }, [data, compCompany]);
 
+    const groupedAvailableProducts = useMemo(() => {
+        const groups: Record<string, string[]> = {
+            'Facial': [],
+            'Kitchen': [],
+            'Toilet': [],
+            'Dolphin': [],
+            'Uncategorized': []
+        };
+        
+        availableProducts.forEach(itemName => {
+            // إخفاء منتجات Soft Rose باللغة الإنجليزية من القوائم ومحركات البحث الداخلية
+            if (compCompany === 'Soft Rose' && /[a-zA-Z]/.test(itemName)) return;
+            let cat = 'Uncategorized';
+            // Find category from data
+            for (const d of data) {
+                if (d.company === compCompany) {
+                    const item = d.items.find(i => i.name === itemName);
+                    if (item && item.category) {
+                        cat = item.category;
+                        break;
+                    }
+                }
+            }
+            
+            // If soft rose, check products
+            if (compCompany === 'Soft Rose' && products) {
+                const prod = products.find(p => p.name === itemName);
+                if (prod && prod.category) {
+                    cat = prod.category;
+                }
+            }
+            
+            if (groups[cat]) {
+                groups[cat].push(itemName);
+            } else {
+                if (!groups['Uncategorized']) groups['Uncategorized'] = [];
+                groups['Uncategorized'].push(itemName);
+            }
+        });
+        
+        return groups;
+    }, [availableProducts, data, compCompany, products]);
+
+    const categoryLabels: Record<string, string> = {
+        'Facial': 'مناديل السحب (Facial)',
+        'Kitchen': 'مناديل المطبخ (Kitchen)',
+        'Toilet': 'تواليت (Toilet)',
+        'Dolphin': 'دولفن (Dolphin)',
+        'Uncategorized': 'أصناف أخرى'
+    };
+
     const handleExport = () => {
-        // 1. All Historical Prices (Sheet 2)
+        // 1. All Historical Prices (Sheet 3)
         const allPricesData = filtered.flatMap(d => (d.items || []).map(i => ({
             "التاريخ": d.date,
             "اليوم": new Date(d.timestamp).toLocaleDateString('ar-EG', { weekday: 'long' }),
@@ -126,86 +187,111 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
             "السعر": i.price
         })));
 
-        // 2. Latest Prices Globally (Sheet 1 source data)
+        // 2. Maps for Latest & Old Prices
         const latestPricesMap = new Map();
+        const oldPricesMap = new Map();
         const sortedData = [...filtered].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        
         sortedData.forEach(record => {
             (record.items || []).forEach(item => {
                 const key = `${record.company}_${item.name}`;
                 if (!latestPricesMap.has(key)) {
-                    latestPricesMap.set(key, {
-                        company: record.company,
-                        category: item.category,
-                        name: item.name,
-                        price: item.price
-                    });
+                    latestPricesMap.set(key, { ...item, date: record.date });
+                } else if (!oldPricesMap.has(key)) {
+                    oldPricesMap.set(key, { ...item, date: record.date });
                 }
             });
         });
-        const latestGlobal = Array.from(latestPricesMap.values());
 
-        // 3. Create AOA format for Sheet 1
-        const aoa: any[][] = [];
-        const todayStr = new Date().toLocaleDateString('ar-EG');
-        
-        // Unique companies for columns
-        const uniqueCompanies = Array.from(new Set(latestGlobal.map(p => p.company)));
-        
-        // Row 1: Date
-        aoa.push([`التاريخ: ${todayStr}`]);
-        
-        // Row 2: Company Names
-        const compNameRow: any[] = [];
-        uniqueCompanies.forEach(comp => {
-            compNameRow.push(comp, "");
-        });
-        aoa.push(compNameRow);
-        
-        // Row 3: Headers
-        const headersRow: any[] = [];
-        uniqueCompanies.forEach(() => {
-            headersRow.push("الصنف", "السعر");
-        });
-        aoa.push(headersRow);
-
-        const categories = [
-            { key: 'Facial', label: 'Facial' },
-            { key: 'Kitchen', label: 'مناديل مطبخ (Kitchen)' },
-            { key: 'Toilet', label: 'تواليت (Toilet)' }
-        ];
-
-        categories.forEach(cat => {
-            // Category Header Row
-            const catHeaderRow: any[] = [];
-            uniqueCompanies.forEach(() => {
-                catHeaderRow.push(`--- ${cat.label} ---`, "");
-            });
-            aoa.push(catHeaderRow);
-
-            const compItems: Record<string, any[]> = {};
-            let maxItems = 0;
-            uniqueCompanies.forEach(comp => {
-                const items = latestGlobal.filter(p => p.company === comp && p.category === cat.key);
-                compItems[comp] = items;
-                if (items.length > maxItems) maxItems = items.length;
-            });
-
-            for (let i = 0; i < maxItems; i++) {
-                const row: any[] = [];
-                uniqueCompanies.forEach(comp => {
-                    const item = compItems[comp][i];
-                    if (item) {
-                        row.push(item.name, item.price);
-                    } else {
-                        row.push("", "");
-                    }
-                });
-                aoa.push(row);
+        const getCompanyProducts = (company: string) => {
+            if (company === 'Soft Rose') {
+                return (products || []).filter(p => !/[a-zA-Z]/.test(p.name));
             }
-        });
+            if (competitorProductsDB[company]) {
+                return Object.values(competitorProductsDB[company]).map((p: any) => ({ name: p.name, category: p.category }));
+            }
+            const gen = (facial: string[], kitchen: string[], toilet: string[]) => [
+                ...facial.map(n => ({ category: 'Facial', name: n })),
+                ...kitchen.map(n => ({ category: 'Kitchen', name: n })),
+                ...toilet.map(n => ({ category: 'Toilet', name: n }))
+            ];
+            switch(company) {
+                case 'Fine': return gen(FINE_FACIAL, FINE_KITCHEN, FINE_TOILET);
+                case 'Zeina': return gen(ZEINA_FACIAL, ZEINA_KITCHEN, ZEINA_TOILET);
+                case 'Papia Familia': return gen(PAPIA_FACIAL, PAPIA_KITCHEN, PAPIA_TOILET);
+                case 'White': return gen(WHITE_FACIAL, WHITE_KITCHEN, WHITE_TOILET);
+                default: return [];
+            }
+        };
+
+        const generateSheetAOA = (pricesMap: Map<string, any>, title: string) => {
+            const aoa: any[][] = [];
+            const companiesOrder = ['Soft Rose', 'Fine', 'Zeina', 'Papia Familia', 'White', 'Classy'];
+            const customAdded = (allCompanies || []).filter(c => !companiesOrder.includes(c));
+            companiesOrder.push(...customAdded);
+            
+            aoa.push([title]);
+            
+            const compNameRow: any[] = [];
+            companiesOrder.forEach(c => {
+                compNameRow.push(c, "");
+            });
+            aoa.push(compNameRow);
+            
+            const headersRow: any[] = [];
+            companiesOrder.forEach(() => {
+                headersRow.push("الصنف", "السعر");
+            });
+            aoa.push(headersRow);
+            
+            const categories = [
+                { key: 'Facial', label: 'Facial' },
+                { key: 'Kitchen', label: 'مناديل مطبخ (Kitchen)' },
+                { key: 'Toilet', label: 'تواليت (Toilet)' },
+                { key: 'Dolphin', label: 'دولفن (Dolphin)' }
+            ];
+            
+            categories.forEach(cat => {
+                const catHeaderRow: any[] = [];
+                companiesOrder.forEach(() => {
+                    catHeaderRow.push(`--- ${cat.label} ---`, "");
+                });
+                aoa.push(catHeaderRow);
+                
+                const compItems: Record<string, any[]> = {};
+                let maxItems = 0;
+                companiesOrder.forEach(comp => {
+                    const allItems = getCompanyProducts(comp).filter(p => p.category === cat.key);
+                    compItems[comp] = allItems;
+                    if (allItems.length > maxItems) maxItems = allItems.length;
+                });
+                
+                if (maxItems === 0) return; // Skip category if completely empty across all companies
+                
+                for (let i = 0; i < maxItems; i++) {
+                    const row: any[] = [];
+                    companiesOrder.forEach(comp => {
+                        const item = compItems[comp][i];
+                        if (item) {
+                            const priceInfo = pricesMap.get(`${comp}_${item.name}`);
+                            row.push(item.name, priceInfo ? priceInfo.price : "");
+                        } else {
+                            row.push("", "");
+                        }
+                    });
+                    aoa.push(row);
+                }
+            });
+            return aoa;
+        };
+
+        const todayStr = new Date().toLocaleDateString('ar-EG');
+        const sheet1Aoa = generateSheetAOA(latestPricesMap, `أحدث الأسعار - تاريخ: ${todayStr}`);
+        const sheet2Aoa = generateSheetAOA(oldPricesMap, `أسعار قديمة (قبل التحديث الأخير)`);
 
         exportToExcel([
-            { name: "أحدث الأسعار", data: aoa, isAoa: true },
+            { name: "أحدث الأسعار", data: sheet1Aoa, isAoa: true },
+            { name: "أسعار قديمة", data: sheet2Aoa, isAoa: true },
             { name: "كل الأسعار (سجل)", data: allPricesData, isAoa: false }
         ], 'تقرير_المنافسين_التفصيلي');
     };
@@ -404,7 +490,19 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
                                 <label className="block text-[10px] font-black opacity-40 uppercase mb-1 text-white">المنتج</label>
                                 <select className="w-full p-3 rounded-xl bg-[#808080] text-white border border-white/10 text-xs font-bold" value={compProduct} onChange={e => setCompProduct(e.target.value)}>
                                     <option value="all">كل المنتجات</option>
-                                    {availableProducts.map(p => <option key={p} value={p}>{p}</option>)}
+                                    {Object.entries(groupedAvailableProducts).map(([cat, items]) => {
+                                        if (items.length === 0) return null;
+                                        if (compCompany !== 'Soft Rose' && cat === 'Dolphin') {
+                                            // Ensure dolphin only for soft rose? The user didn't explicitly restrict Dolphin to Soft Rose only, 
+                                            // but said "وفي باقي الشركات تقسم ... السحب ، المطبخ ، تواليت". We will just render whatever categories exist.
+                                        }
+                                        const label = categoryLabels[cat] || cat;
+                                        return (
+                                            <optgroup key={cat} label={label}>
+                                                {items.map(name => <option key={name} value={name}>{name}</option>)}
+                                            </optgroup>
+                                        );
+                                    })}
                                 </select>
                             </div>
                         </div>
@@ -459,7 +557,7 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
                                     <input 
                                         type="text" 
                                         className="w-full bg-gray-800 text-white p-2.5 rounded-lg border border-white/10 text-xs font-bold"
-                                        value={item.name}
+                                        value={item.name || ''}
                                         onChange={e => updateEditingItem(idx, 'name', e.target.value)}
                                         placeholder="اسم الصنف"
                                     />
@@ -467,7 +565,7 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme }) => {
                                         <label className="text-[10px] font-black opacity-40 uppercase text-white">السعر</label>
                                         <input 
                                             type="number" 
-                                            value={item.price} 
+                                            value={item.price || ''} 
                                             onChange={e => updateEditingItem(idx, 'price', Number(e.target.value))} 
                                             className="flex-1 p-2.5 rounded-lg bg-gray-700 text-white text-center border border-white/10 text-xs font-black"
                                         />

@@ -1,3 +1,4 @@
+import { onCachedValue } from "./firebaseCache";
 
 import React, { useState, useEffect } from 'react';
 import { db } from './firebase';
@@ -37,7 +38,7 @@ const App: React.FC = () => {
   const [theme, setTheme] = useState<'dark'>('dark');
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [markets, setMarkets] = useState<string[]>([]);
-  const [products, setProducts] = useState<{id: string, name: string, category: string}[]>([]);
+  const [products, setProducts] = useState<{id: string, name: string, category: string, order?: number}[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [welcomeToast, setWelcomeToast] = useState<string | null>(null);
@@ -53,11 +54,11 @@ const App: React.FC = () => {
     const productsRef = ref(db, 'products');
     const connectedRef = ref(db, ".info/connected");
 
-    onValue(settingsRef, (snapshot) => {
+    const unsubSettings = onCachedValue(settingsRef, 'settings_app', (snapshot) => {
       if (snapshot.exists()) setSettings({...DEFAULT_SETTINGS, ...snapshot.val()});
     });
 
-    onValue(productsRef, (snapshot) => {
+    const unsubProducts = onCachedValue(productsRef, 'products', (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
         const prods = Object.keys(data).map(key => {
@@ -67,9 +68,10 @@ const App: React.FC = () => {
           return {
             id: key,
             name: String(name),
-            category: item?.category || 'Uncategorized'
+            category: item?.category || 'Uncategorized',
+            order: item?.order || 0
           };
-        });
+        }).sort((a, b) => (a.order || 0) - (b.order || 0));
         setProducts(prods);
       } else {
         // Initialize from constants if empty
@@ -95,7 +97,7 @@ const App: React.FC = () => {
       }
     });
 
-    onValue(marketsRef, (snapshot) => {
+    const unsubMarkets = onCachedValue(marketsRef, 'settings_markets', (snapshot) => {
       const systemMarkets = INITIAL_MARKETS.map(name => ({ name, createdBy: 'system' }));
       const dbMarkets = snapshot.exists() ? Object.values(snapshot.val()).map((m: any) => {
         if (typeof m === 'string') return { name: m, createdBy: 'system' };
@@ -123,13 +125,14 @@ const App: React.FC = () => {
       }
     }, { onlyOnce: false });
 
-    onValue(connectedRef, (snap) => setIsConnected(!!snap.val()));
+    const unsubConnected = onValue(connectedRef, (snap) => setIsConnected(!!snap.val()));
+    return () => { unsubSettings(); unsubProducts(); unsubMarkets(); unsubConnected(); };
   }, [user?.username, user?.role]);
 
   useEffect(() => {
     if (!user || !user.key || user.key === 'admin_root') return;
     const userRef = ref(db, `users/${user.key}`);
-    const unsubscribe = onValue(userRef, (snapshot) => {
+    const unsubscribe = onCachedValue(userRef, `user_${user?.username || 'unknown'}`, (snapshot) => {
       if (snapshot.exists()) {
         const updatedData = { ...snapshot.val(), key: user.key };
         setUser(updatedData);
@@ -148,7 +151,7 @@ const App: React.FC = () => {
     set(userStatusRef, { online: true, lastSeen: serverTimestamp(), name: user.name, username: user.username });
     onDisconnect(userStatusRef).set({ online: false, lastSeen: serverTimestamp(), name: user.name, username: user.username });
 
-    onValue(ref(db, `notifications/${user.username}`), (snapshot) => {
+    const unsubNotifs = onCachedValue(ref(db, `notifications/${user.username}`), `notifs_${user.username}`, (snapshot) => {
         if(snapshot.exists()) {
             const data = snapshot.val();
             const list = Object.keys(data).map(key => ({ id: key, ...data[key] })).sort((a,b) => b.timestamp - a.timestamp);
@@ -160,7 +163,7 @@ const App: React.FC = () => {
         }
     });
 
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); unsubNotifs(); };
   }, [user?.username]);
 
   const handleLogout = async () => {
@@ -319,11 +322,11 @@ const App: React.FC = () => {
         <main className="flex-1 p-2 md:p-4 overflow-y-auto w-full">
             <div className={`p-4 md:p-6 min-h-full rounded-2xl shadow-xl bg-gray-900/60 border border-white/5`}>
                 {currentView === 'sales' && <DailySales user={user} markets={markets} theme={theme} products={products} />}
-                {currentView === 'salesLog' && <SalesLog user={user} markets={markets} theme={theme} />}
+                {currentView === 'salesLog' && <SalesLog user={user} markets={markets} theme={theme} products={products} />}
                 {currentView === 'inventoryReg' && <InventoryRegistration user={user} markets={markets} theme={theme} products={products} />}
                 {currentView === 'inventoryLog' && <InventoryLog user={user} markets={markets} theme={theme} />}
                 {currentView === 'competitorPrices' && <CompetitorPrices user={user} markets={markets} theme={theme} products={products} />}
-                {currentView === 'competitorReports' && <CompetitorReports user={user} markets={markets} theme={theme} />}
+                {currentView === 'competitorReports' && <CompetitorReports user={user} markets={markets} theme={theme} products={products} />}
                 {currentView === 'leaveBalance' && <LeaveBalanceComponent user={user} theme={theme} />}
                 {currentView === 'settings' && <Settings user={user} settings={settings} markets={markets} theme={theme} setTheme={setTheme as any} />}
             </div>

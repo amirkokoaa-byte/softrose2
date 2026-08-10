@@ -1,3 +1,4 @@
+import { onCachedValue } from "../firebaseCache";
 
 import React, { useState, useEffect } from 'react';
 import { ref, push, onValue, set, get, update, remove } from "firebase/database";
@@ -10,7 +11,7 @@ interface Props {
     user: User;
     markets: string[];
     theme: string;
-    products: {id: string, name: string, category: string}[];
+    products: {id: string, name: string, category: string, order?: number}[];
 }
 
 const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
@@ -22,6 +23,7 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
     // حالات التعديل الجديدة
     const [editingItemId, setEditingItemId] = useState<string | null>(null);
     const [tempName, setTempName] = useState('');
+    const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
 
     const handleAddMarket = async () => {
         const newMarket = prompt("أدخل اسم الماركت الجديد:");
@@ -52,7 +54,7 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
     useEffect(() => {
         if (user.key) {
             const targetRef = ref(db, `targets/${user.key}`);
-            onValue(targetRef, (snapshot) => {
+            const unsub = onCachedValue(targetRef, 'targets', (snapshot) => {
                 if (snapshot.exists()) {
                     const data = snapshot.val() as UserTarget;
                     const now = new Date();
@@ -61,11 +63,11 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
                     if (data.lastResetMonth !== currentMonth) {
                         const historyRef = ref(db, `target_history/${user.key}`);
                         push(historyRef, {
-                            userId: data.userId,
-                            employeeName: data.employeeName,
+                            userId: data.userId || user.key,
+                            employeeName: data.employeeName || user.name || 'غير معروف',
                             month: data.lastResetMonth,
-                            targetAmount: data.finalTarget,
-                            achievedAmount: data.achieved
+                            targetAmount: data.finalTarget || 0,
+                            achievedAmount: data.achieved || 0
                         });
 
                         update(targetRef, {
@@ -79,13 +81,14 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
                     setUserTarget(null);
                 }
             });
+            return () => unsub();
         }
     }, [user.key, user.name]);
 
     
     useEffect(() => {
         const salesRef = ref(db, 'sales');
-        const unsubscribe = onValue(salesRef, (snapshot) => {
+        const unsubscribe = onCachedValue(salesRef, `sales`, (snapshot) => {
             if (snapshot.exists()) {
                 const allSales = Object.values(snapshot.val() || {}) as any[];
                 const now = new Date();
@@ -104,6 +107,84 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
         });
         return () => unsubscribe();
     }, [user.name]);
+
+        const handleDragStart = (e: React.DragEvent, id: string) => {
+        if (user.role !== 'admin') return;
+        e.dataTransfer.setData('text/plain', id);
+        setDraggedItemId(id);
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+        if (user.role !== 'admin') return;
+        e.preventDefault();
+    };
+
+    
+    const handleCategoryDrop = async (e: React.DragEvent, targetCategory: string) => {
+        if (user.role !== 'admin') return;
+        e.preventDefault();
+        const draggedId = e.dataTransfer.getData('text/plain');
+        if (!draggedId) return;
+
+        // Only handle if dropping directly on the category container (not on an item)
+        // Check if the drop target is the container itself
+        if (e.target === e.currentTarget) {
+            const draggedIndex = products.findIndex(p => p.id === draggedId);
+            if (draggedIndex === -1) return;
+
+            const newProducts = [...products];
+            const [removed] = newProducts.splice(draggedIndex, 1);
+            removed.category = targetCategory;
+            
+            // Append to the end of this category
+            // We can just push it to the end of newProducts, or find the last item of this category
+            const lastCatIndex = newProducts.findLastIndex(p => p.category === targetCategory);
+            if (lastCatIndex !== -1) {
+                newProducts.splice(lastCatIndex + 1, 0, removed);
+            } else {
+                newProducts.push(removed);
+            }
+
+            const updates: any = {};
+            newProducts.forEach((p, idx) => {
+                updates[`${p.id}/order`] = idx;
+                if (p.id === draggedId) {
+                    updates[`${p.id}/category`] = targetCategory;
+                }
+            });
+
+            await update(ref(db, 'products'), updates);
+            setDraggedItemId(null);
+        }
+    };
+
+
+    const handleDrop = async (e: React.DragEvent, targetId: string, targetCategory: string) => {
+        if (user.role !== 'admin') return;
+        e.preventDefault();
+        const draggedId = e.dataTransfer.getData('text/plain');
+        if (!draggedId || draggedId === targetId) return;
+
+        const draggedIndex = products.findIndex(p => p.id === draggedId);
+        const targetIndex = products.findIndex(p => p.id === targetId);
+        if (draggedIndex === -1 || targetIndex === -1) return;
+
+        const newProducts = [...products];
+        const [removed] = newProducts.splice(draggedIndex, 1);
+        removed.category = targetCategory;
+        newProducts.splice(targetIndex, 0, removed);
+
+        const updates: any = {};
+        newProducts.forEach((p, idx) => {
+            updates[`${p.id}/order`] = idx;
+            if (p.id === draggedId) {
+                updates[`${p.id}/category`] = targetCategory;
+            }
+        });
+
+        await update(ref(db, 'products'), updates);
+        setDraggedItemId(null);
+    };
 
     const updateItem = (id: string, field: string, value: any) => {
         setSalesItems(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
@@ -265,9 +346,16 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
                         <div className="col-span-2 text-center">إجراء</div>
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="space-y-2 min-h-[50px] pb-4" onDragOver={handleDragOver} onDrop={(e) => handleCategoryDrop(e, cat.key)}>
                         {salesItems.filter(i => i.category === cat.key).map(item => (
-                            <div key={item.id} className="grid grid-cols-12 gap-2 items-center bg-black/20 p-2 rounded-2xl border border-transparent hover:border-white/10 transition">
+                            <div 
+        key={item.id} 
+        draggable={user.role === 'admin'}
+        onDragStart={(e) => handleDragStart(e, item.id)}
+        onDragOver={handleDragOver}
+        onDrop={(e) => handleDrop(e, item.id, cat.key)}
+        className={`grid grid-cols-12 gap-2 items-center bg-black/20 p-2 rounded-2xl border transition ${draggedItemId === item.id ? 'opacity-50 border-dashed border-white/50' : 'border-transparent hover:border-white/10'} ${user.role === 'admin' ? 'cursor-move' : ''}`}
+    >
                                 <div className="col-span-4 pr-2 font-bold text-white">
                                     {editingItemId === item.id ? (
                                         <div className="flex gap-1">

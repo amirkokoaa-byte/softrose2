@@ -126,7 +126,7 @@ const InventoryRegistration: React.FC<Props> = ({ user, markets, theme, products
                             <div key={item.id} className="flex justify-between items-center gap-2 p-2 border-b border-gray-500/10">
                                 <div className="flex-1">
                                     {item.isCustom ? (
-                                        <input type="text" value={item.name} onChange={e => updateItem(item.id, 'name', e.target.value)} className={`${inputClass} w-full text-sm`} placeholder="اسم الصنف..." />
+                                        <input type="text" value={item.name || ''} onChange={e => updateItem(item.id, 'name', e.target.value)} className={`${inputClass} w-full text-sm`} placeholder="اسم الصنف..." />
                                     ) : (
                                         <span className="text-sm font-medium whitespace-normal break-words block">{item.name}</span>
                                     )}

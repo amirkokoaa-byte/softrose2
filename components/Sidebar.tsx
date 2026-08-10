@@ -1,3 +1,4 @@
+import { onCachedValue } from "../firebaseCache";
 
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
@@ -30,7 +31,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, user, theme, co
     useEffect(() => {
         if (user.role === 'admin') {
             const statusRef = ref(db, 'status');
-            const unsubscribe = onValue(statusRef, (snapshot) => {
+            const unsubscribe = onCachedValue(statusRef, 'status', (snapshot) => {
                 if (snapshot.exists()) {
                     const data = snapshot.val();
                     const list: UserStatus[] = Object.keys(data).map(key => ({
@@ -67,8 +68,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, user, theme, co
     ];
 
     const menuItems = allItems.filter(item => {
-        if (user.role === 'admin') return true;
-        if (item.adminOnly) return false;
+        if (user.role === 'admin' || user.role === 'manager') return true;
+        if (item.adminOnly && user.role !== 'admin' && user.role !== 'manager') return false;
         if (item.alwaysShow) return true;
         if (item.permissionKey) {
             const perms = user.permissions || {} as any;

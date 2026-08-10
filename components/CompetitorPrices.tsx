@@ -1,3 +1,4 @@
+import { onCachedValue } from "../firebaseCache";
 
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
@@ -24,7 +25,7 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme, products }) =
     const [competitorProductsDB, setCompetitorProductsDB] = useState<Record<string, any>>({});
 
     useEffect(() => {
-        onValue(ref(db, 'settings/companies'), snapshot => {
+        const unsubCompanies = onCachedValue(ref(db, 'settings/companies'), 'settings_companies', snapshot => {
             if (snapshot.exists()) {
                 const companies = Object.values(snapshot.val()).map((c: any) => {
                     if (typeof c === 'string') return c;
@@ -43,13 +44,14 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme, products }) =
             }
         });
 
-        onValue(ref(db, 'settings/competitor_products'), snap => {
+        const unsubProducts = onCachedValue(ref(db, 'settings/competitor_products'), 'settings_competitor_products', snap => {
             if (snap.exists()) {
                 setCompetitorProductsDB(snap.val());
             } else {
                 setCompetitorProductsDB({});
             }
         });
+        return () => { unsubCompanies(); unsubProducts(); };
     }, []);
 
     const allCompanies = Array.from(new Set([...COMPANIES, ...customCompanies]));
@@ -269,7 +271,7 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme, products }) =
                                             {user.role === 'admin' && selectedCompany !== 'Soft Rose' ? (
                                                 <input
                                                     type="text"
-                                                    value={currentName}
+                                                    value={currentName || ''}
                                                     onChange={e => setEditedNames(prev => ({...prev, [item.id]: e.target.value}))}
                                                     className="w-full text-xs text-white bg-transparent border-b border-transparent focus:border-blue-400 outline-none font-bold"
                                                 />

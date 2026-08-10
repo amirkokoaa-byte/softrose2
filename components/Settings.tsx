@@ -1,3 +1,4 @@
+import { onCachedValue } from "../firebaseCache";
 
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
@@ -58,9 +59,9 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
     }, [settings]);
 
     useEffect(() => {
-        if (user.role !== 'admin') return;
+        if (user.role !== 'admin' && user.role !== 'manager') return;
 
-        onValue(ref(db, 'users'), snapshot => {
+        const unsubUsers = onCachedValue(ref(db, 'users'), 'users', snapshot => {
             if (snapshot.exists()) {
                 const u: User[] = [];
                 snapshot.forEach(c => { u.push({ key: c.key || '', ...c.val() }); });
@@ -68,7 +69,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
             }
         });
 
-        onValue(ref(db, 'settings/markets'), snapshot => {
+        const unsubMarkets = onCachedValue(ref(db, 'settings/markets'), 'settings_markets', snapshot => {
             if(snapshot.exists()){
                 const m: any[] = [];
                 snapshot.forEach(c => { 
@@ -92,7 +93,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
             }
         });
 
-        onValue(ref(db, 'settings/companies'), snapshot => {
+        const unsubCompanies = onCachedValue(ref(db, 'settings/companies'), 'settings_companies', snapshot => {
             if(snapshot.exists()){
                 const cArr: any[] = [];
                 snapshot.forEach(k => { 
@@ -115,6 +116,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 setCompanyList(cArr);
             }
         });
+        return () => { unsubUsers(); unsubMarkets(); unsubCompanies(); };
     }, [user.role]);
 
     const saveAppSettings = async () => {
@@ -335,12 +337,13 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
             case 'manager': return 'مدير';
             case 'coordinator': return 'منسق';
             case 'supervisor': return 'مشرف';
+            case 'usher': return 'أشر';
             case 'user':
             default: return 'موظف';
         }
     };
 
-    if (user.role !== 'admin') {
+    if (user.role !== 'admin' && user.role !== 'manager') {
         return <div className="p-10 text-center opacity-50">عذراً، هذه الصفحة متاحة للمسؤولين فقط.</div>;
     }
 
@@ -362,16 +365,16 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <label className="block text-sm font-bold mb-2 opacity-70 text-white">اسم التطبيق (AppName)</label>
-                        <input className={inputClass} value={localSettings.appName} onChange={e => setLocalSettings({...localSettings, appName: e.target.value})} />
+                        <input className={inputClass} value={localSettings.appName || ''} onChange={e => setLocalSettings({...localSettings, appName: e.target.value})} />
                     </div>
                     <div>
                         <label className="block text-sm font-bold mb-2 opacity-70 text-white">رقم واتساب الدعم</label>
-                        <input className={inputClass} placeholder="مثال: 2010XXXXXXXX" value={localSettings.whatsappNumber} onChange={e => setLocalSettings({...localSettings, whatsappNumber: e.target.value})} />
+                        <input className={inputClass} placeholder="مثال: 2010XXXXXXXX" value={localSettings.whatsappNumber || ''} onChange={e => setLocalSettings({...localSettings, whatsappNumber: e.target.value})} />
                     </div>
                     <div className="md:col-span-2 text-white">
                         <label className="block text-sm font-bold mb-2 opacity-70">نص الشريط المتحرك (Ticker Text)</label>
                         <div className="flex gap-2">
-                            <input className={inputClass} value={localSettings.tickerText} onChange={e => setLocalSettings({...localSettings, tickerText: e.target.value})} />
+                            <input className={inputClass} value={localSettings.tickerText || ''} onChange={e => setLocalSettings({...localSettings, tickerText: e.target.value})} />
                             <button 
                                 onClick={() => setLocalSettings({...localSettings, tickerEnabled: !localSettings.tickerEnabled})}
                                 className={`px-4 rounded-lg flex items-center gap-2 font-bold ${localSettings.tickerEnabled ? 'bg-green-600 text-white' : 'bg-gray-300 text-gray-700'}`}
@@ -506,6 +509,8 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                             <option value="manager">مدير (Manager)</option>
                             <option value="coordinator">منسق (Coordinator)</option>
                             <option value="supervisor">مشرف (Supervisor)</option>
+                            <option value="usher">أشر (Usher)</option>
+                            <option value="usher">أشر (Usher)</option>
                         </select>
                     </div>
                     <button onClick={handleAddUser} className="mt-4 w-full bg-green-600 text-white font-bold py-2 rounded-lg hover:bg-green-700 transition shadow-lg">إضافة الموظف</button>
@@ -560,6 +565,8 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                             <option value="manager">مدير (Manager)</option>
                             <option value="coordinator">منسق (Coordinator)</option>
                             <option value="supervisor">مشرف (Supervisor)</option>
+                            <option value="usher">أشر (Usher)</option>
+                            <option value="usher">أشر (Usher)</option>
                         </select>
                         <div className="flex gap-2 mt-4">
                             <button onClick={handleUpdateRole} className="flex-1 bg-purple-600 text-white py-2 rounded-lg font-bold">تحديث</button>

@@ -1,3 +1,4 @@
+import { onCachedValue } from "../firebaseCache";
 
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
@@ -19,7 +20,7 @@ const InventoryLog: React.FC<Props> = ({ user, markets, theme }) => {
 
     useEffect(() => {
         const invRef = ref(db, 'inventory');
-        onValue(invRef, (snapshot) => {
+        const unsub = onCachedValue(invRef, 'inventory', (snapshot) => {
             const data = snapshot.val();
             if (data) {
                 let arr = Object.keys(data).map(key => ({ id: key, ...data[key] })) as InventoryRecord[];
@@ -29,6 +30,7 @@ const InventoryLog: React.FC<Props> = ({ user, markets, theme }) => {
                 setLogs(arr.sort((a,b) => b.timestamp - a.timestamp));
             } else { setLogs([]); }
         });
+        return () => unsub();
     }, [user]);
 
     const filteredLogs = selectedMarket ? logs.filter(l => l.market === selectedMarket) : logs;
@@ -100,7 +102,7 @@ const InventoryLog: React.FC<Props> = ({ user, markets, theme }) => {
                             {editingLog.items.map((item, idx) => (
                                 <div key={idx} className="flex justify-between items-center p-3 bg-white/5 rounded-2xl border border-white/5">
                                     <span className="text-xs font-bold text-white truncate max-w-[200px]">{item.name}</span>
-                                    <input type="number" value={item.qty} onChange={e => {
+                                    <input type="number" value={item.qty || ''} onChange={e => {
                                         const n = [...editingLog.items];
                                         n[idx].qty = Number(e.target.value);
                                         setEditingLog({...editingLog, items: n});

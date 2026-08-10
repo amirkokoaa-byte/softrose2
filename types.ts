@@ -75,6 +75,7 @@ export interface LeaveBalance {
     sick: number;
     exams: number;
     unpaid: number;
+    weeklyDays?: string[];
     lastUnpaidReset?: string; // تتبع آخر شهر تم فيه تصفير الغياب "YYYY-MM"
 }
 
@@ -84,7 +85,8 @@ export interface LeaveRecord {
     employeeName: string;
     date: string;
     days: number;
-    type: 'annual' | 'casual' | 'sick' | 'exams' | 'unpaid';
+    type: 'annual' | 'casual' | 'sick' | 'exams' | 'unpaid' | 'custom' | 'penalty' | 'official';
+    customLabel?: string;
     timestamp: number;
 }
 
