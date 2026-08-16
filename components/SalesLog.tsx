@@ -1485,8 +1485,7 @@ const normalizeName = (name: string) => {
                                             const achieved = computeAchieved(u.name, now.getFullYear(), now.getMonth(), u.key);
                                             return achieved > 0;
                                         } else {
-                                            const monthHistories = targetHistory[selectedTargetMonth] || [];
-                                            const h = monthHistories.find(x => x.userId === u.key || x.employeeName === u.name);
+                                            const h = archiveData.find(x => x.month === selectedTargetMonth && (x.userId === u.key || x.employeeName === u.name));
                                             return h && h.achievedAmount > 0;
                                         }
                                     }).map(u => <option key={u.key} value={u.key}>{u.name}</option>)}
