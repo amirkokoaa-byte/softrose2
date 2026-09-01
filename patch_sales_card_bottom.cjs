@@ -1,15 +1,7 @@
 const fs = require('fs');
 let content = fs.readFileSync('components/SalesLog.tsx', 'utf8');
 
-const targetStr = `                            )}
-                        </div>
-                    </div>
-                ))}
-            </div>`;
-
-const commentsUI = `                            )}
-                        </div>
-                        
+const commentsUI = `
                         {(showCommentInput[sale.id] || (sale.comments && sale.comments.length > 0)) && (
                             <div className="mt-4 pt-4 border-t border-white/10">
                                 <div className="space-y-3 mb-4">
@@ -44,15 +36,12 @@ const commentsUI = `                            )}
                                 )}
                             </div>
                         )}
-                    </div>
-                ))}
-            </div>`;
+`;
 
-if(content.includes(targetStr)) {
-    content = content.replace(targetStr, commentsUI);
-    fs.writeFileSync('components/SalesLog.tsx', content);
-    console.log("Patched bottom correctly");
-} else {
-    console.log("target string not found");
-}
+// Insert before `                    </div>\n                ))}`
+// But wait, there are multiple map loops maybe? Let's check `))}` in SalesLog.tsx.
+content = content.replace(/<\/div>\s*\}\)\}\s*<\/div>/g, (match) => {
+    return commentsUI + '\n' + match;
+});
 
+fs.writeFileSync('components/SalesLog.tsx', content);

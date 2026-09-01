@@ -264,7 +264,7 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
                         <div>
                             <div className="text-[10px] font-black opacity-60 text-white uppercase tracking-widest">إجمالي المبيعات الحالية</div>
                             <div className="text-2xl font-black text-blue-400">
-                                {currentTotal.toLocaleString()} <span className="text-xs">ج.م</span>
+                                {(currentTotal || 0).toLocaleString()} <span className="text-xs">ج.م</span>
                             </div>
                         </div>
                     </div>
@@ -279,7 +279,7 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
                                     <div className="text-[10px] font-black opacity-60 text-white uppercase tracking-widest">التارجت الشهري</div>
                                     <div className="flex justify-between items-end">
                                         <div className="text-2xl font-black text-purple-400">
-                                            {userTarget.finalTarget.toLocaleString()} <span className="text-xs">ج.م</span>
+                                            {(userTarget.finalTarget || 0).toLocaleString()} <span className="text-xs">ج.م</span>
                                         </div>
                                         <div className="text-sm font-bold text-green-400">
                                             {progressPercent}%
@@ -297,7 +297,7 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
                                 <div>
                                     <div className="text-[10px] font-black opacity-60 text-white uppercase tracking-widest">المتبقي من التارجت</div>
                                     <div className="text-2xl font-black text-orange-400">
-                                        {remaining.toLocaleString()} <span className="text-xs">ج.م</span>
+                                        {(remaining || 0).toLocaleString()} <span className="text-xs">ج.م</span>
                                     </div>
                                 </div>
                             </div>
@@ -359,13 +359,17 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
                                 <div className="col-span-4 pr-2 font-bold text-white">
                                     {editingItemId === item.id ? (
                                         <div className="flex gap-1">
-                                            <input 
-                                                type="text" 
+                                            <select 
                                                 className="w-full bg-gray-700 border border-blue-500/50 p-1.5 rounded-lg text-white text-[10px] font-bold"
                                                 value={tempName}
                                                 onChange={e => setTempName(e.target.value)}
                                                 autoFocus
-                                            />
+                                            >
+                                                <option value="">-- اختر الصنف --</option>
+                                                {Array.from(new Set([...PRODUCTS_FACIAL, ...PRODUCTS_KITCHEN, ...PRODUCTS_TOILET, ...PRODUCTS_DOLPHIN, ...products.map(p => p.name)])).sort().map(pName => (
+                                                    <option key={pName} value={pName}>{pName}</option>
+                                                ))}
+                                            </select>
                                             <button onClick={() => saveName(item.id)} className="text-green-400 p-1 hover:bg-green-400/10 rounded"><Check size={14}/></button>
                                             <button onClick={() => setEditingItemId(null)} className="text-red-400 p-1 hover:bg-red-400/10 rounded"><X size={14}/></button>
                                         </div>

@@ -1,3 +1,12 @@
+export interface SaleComment {
+    id: string;
+    text: string;
+    senderId: string;
+    senderName: string;
+    timestamp: number;
+    isLiked?: boolean;
+}
+
 
 export interface ProductItem {
     id: string;
@@ -17,6 +26,9 @@ export interface SaleRecord {
     username?: string;
     items: ProductItem[];
     total: number;
+    likes?: string[];
+    dislikes?: string[];
+    comments?: SaleComment[];
 }
 
 export interface InventoryRecord {

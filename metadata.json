@@ -1,5 +1,6 @@
 {
   "name": "Soft Rose Modern Trade",
   "description": "نظام إدارة المبيعات والمخزون والمنافسين لشركة Soft Rose",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

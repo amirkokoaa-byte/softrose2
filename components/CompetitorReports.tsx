@@ -25,6 +25,7 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme, products = [
     
     // Price Comparison State
     const [showComparisonModal, setShowComparisonModal] = useState(false);
+    const [showComparisonDataModal, setShowComparisonDataModal] = useState(false);
     const [compMarket, setCompMarket] = useState('all');
     const [compCompany, setCompCompany] = useState(COMPANIES[0]);
     const [compProduct, setCompProduct] = useState('all');
@@ -506,8 +507,21 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme, products = [
                                 </select>
                             </div>
                         </div>
-
+                        <button onClick={() => setShowComparisonDataModal(true)} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition shadow-lg mt-4">اظهر البيانات</button>
+                    </div>
+                </div>
+            )}
+            
+            {showComparisonDataModal && (
+                <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black/90 flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto my-auto">
+                    <div className="w-full max-w-4xl bg-gray-900 border border-white/20 rounded-3xl p-6 flex flex-col max-h-[95vh] shadow-2xl animate-in zoom-in-95 my-auto">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-bold text-xl text-white flex items-center gap-2"><Scale className="text-indigo-400"/> بيانات أحدث الأسعار</h3>
+                            <button onClick={() => setShowComparisonDataModal(false)} className="text-white/50 hover:text-white"><X size={20}/></button>
+                        </div>
+                        
                         <div className="flex-1 overflow-y-auto custom-scrollbar border border-white/5 rounded-2xl bg-black/20 p-2">
+                            
                              <table className="w-full text-xs text-center border-collapse">
                                 <thead className="bg-white/5 sticky top-0 z-10">
                                     <tr className="text-white opacity-60">
@@ -524,22 +538,23 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme, products = [
                                         <tr key={i} className="border-t border-white/5 hover:bg-white/5 transition-colors text-white">
                                             <td className="py-3 px-4 text-right font-bold text-indigo-300">{r.market}</td>
                                             <td className="py-3 px-4 font-bold">{r.product}</td>
-                                            <td className="py-3 px-4 font-black text-green-400">{r.price.toLocaleString()} ج.م</td>
+                                            <td className="py-3 px-4 font-black text-green-400">{(Number(r.price) || 0).toLocaleString()} ج.م</td>
                                             <td className="py-3 px-4 opacity-50 text-[10px]">{r.date}</td>
                                         </tr>
                                     ))}
                                 </tbody>
                              </table>
+                        
                         </div>
-
                         {comparisonResults.length > 0 && (
                             <button 
                                 onClick={handleExportComparison}
-                                className="w-full bg-green-600 text-white font-bold py-4 rounded-2xl shadow-xl transition active:scale-95 flex items-center justify-center gap-2 mt-4"
+                                className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-2xl shadow-xl transition active:scale-95 flex items-center justify-center gap-2 mt-4"
                             >
                                 <FileSpreadsheet size={20}/> تصدير مقارنة الأسعار (أحدث سعر)
                             </button>
                         )}
+    
                     </div>
                 </div>
             )}

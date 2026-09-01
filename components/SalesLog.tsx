@@ -5,8 +5,9 @@ import { db } from '../firebase';
 import { ref, onValue, remove, update, get, set, push } from "firebase/database";
 import { User, SaleRecord, ProductItem, UserTarget, TargetHistory } from '../types';
 import { 
-    Trash2, Edit, FileSpreadsheet, Save, X, Calendar, User as UserIcon, TrendingUp, Star, Trophy, Download, Filter, Target, History, Copy, Search, Package, ShoppingBag, Calculator, ChevronDown, ChevronUp, Printer
+    Trash2, Edit, FileSpreadsheet, Save, X, Calendar, User as UserIcon, TrendingUp, Star, Trophy, Download, Filter, Target, History, Copy, Search, Package, ShoppingBag, Calculator, ChevronDown, ChevronUp, Printer, ThumbsUp, ThumbsDown, MessageSquare, Send, Heart
 } from 'lucide-react';
+import { PRODUCTS_FACIAL, PRODUCTS_KITCHEN, PRODUCTS_TOILET, PRODUCTS_DOLPHIN } from '../constants';
 import { exportToCSV } from '../utils';
 import { Share2, FileDown } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
@@ -21,6 +22,94 @@ interface Props {
 
 const SalesLog: React.FC<Props> = ({ user, markets, theme, products }) => {
     const [sales, setSales] = useState<SaleRecord[]>([]);
+
+    const [commentText, setCommentText] = useState<{[key: string]: string}>({});
+    const [showCommentInput, setShowCommentInput] = useState<{[key: string]: boolean}>({});
+
+    const handleReaction = async (saleId: string, type: 'like' | 'dislike') => {
+        const sale = sales.find(s => s.id === saleId);
+        if (!sale) return;
+        
+        let likes = Array.isArray(sale.likes) ? [...sale.likes] : (sale.likes ? Object.values(sale.likes) : []);
+        let dislikes = Array.isArray(sale.dislikes) ? [...sale.dislikes] : (sale.dislikes ? Object.values(sale.dislikes) : []);
+        
+        const userKey = user.username || user.name;
+        
+        if (type === 'like') {
+            if (likes.includes(userKey)) {
+                likes = likes.filter(u => u !== userKey);
+            } else {
+                likes.push(userKey);
+                dislikes = dislikes.filter(u => u !== userKey);
+            }
+        } else {
+            if (dislikes.includes(userKey)) {
+                dislikes = dislikes.filter(u => u !== userKey);
+            } else {
+                dislikes.push(userKey);
+                likes = likes.filter(u => u !== userKey);
+            }
+        }
+        
+        await update(ref(db, `sales/${saleId}`), { likes, dislikes });
+    };
+
+    const handleAddComment = async (saleId: string) => {
+        const text = commentText[saleId]?.trim();
+        if (!text) return;
+        
+        const sale = sales.find(s => s.id === saleId);
+        if (!sale) return;
+        
+        const newComment = {
+            id: Date.now().toString(),
+            text,
+            senderId: user.username || user.name,
+            senderName: user.name,
+            timestamp: Date.now(),
+            isLiked: false
+        };
+        
+        const comments = [...(Array.isArray(sale.comments) ? sale.comments : (sale.comments ? Object.values(sale.comments) : [])), newComment];
+        await update(ref(db, `sales/${saleId}`), { comments });
+        
+        setCommentText(prev => ({ ...prev, [saleId]: '' }));
+        setShowCommentInput(prev => ({ ...prev, [saleId]: false }));
+
+        // Send notification to employee
+        const employeeUser = usersList.find(u => u.name === sale.employeeName);
+        const notifTarget = sale.username || (employeeUser ? employeeUser.username : null);
+        if (notifTarget && notifTarget !== user.username) {
+            push(ref(db, `notifications/${notifTarget}`), {
+                message: `أضاف ${user.name} تعليقاً على مبيعاتك في ${sale.market}`,
+                sender: user.name,
+                timestamp: Date.now(),
+                isRead: false
+            });
+        }
+    };
+
+    const handleLikeComment = async (saleId: string, commentId: string) => {
+        const sale = sales.find(s => s.id === saleId);
+        if (!sale) return;
+        
+        const comments = (Array.isArray(sale.comments) ? sale.comments : (sale.comments ? Object.values(sale.comments) : [])).map(c => 
+            c.id === commentId ? { ...c, isLiked: !c.isLiked } : c
+        );
+        
+        await update(ref(db, `sales/${saleId}`), { comments });
+        
+        const comment = sale.comments?.find(c => c.id === commentId);
+        if (comment) {
+            push(ref(db, `notifications/admin_alerts`), {
+                message: `أعجب ${user.name} بتعليق ${comment.senderName}`,
+                sender: user.name,
+                timestamp: Date.now(),
+                isRead: false
+            });
+        }
+    };
+
     const [filteredSales, setFilteredSales] = useState<SaleRecord[]>([]);
     const [selectedSalesIds, setSelectedSalesIds] = useState<string[]>([]);
     const [visibleCount, setVisibleCount] = useState(15);
@@ -40,6 +129,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme, products }) => {
     
     // Product Sales Report State
     const [showProductSalesModal, setShowProductSalesModal] = useState(false);
+    const [showProductSalesDataModal, setShowProductSalesDataModal] = useState(false);
     const [reportItem, setReportItem] = useState('all');
     const [reportMarket, setReportMarket] = useState('all');
     const [reportStart, setReportStart] = useState('');
@@ -64,6 +154,67 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme, products }) => {
     const [selectedTargetMonth, setSelectedTargetMonth] = useState<string>('current');
     const [showPastTargetsModal, setShowPastTargetsModal] = useState(false);
     const [targetsList, setTargetsList] = useState<UserTarget[]>([]);
+    const [showTargetDropdown, setShowTargetDropdown] = useState(false);
+
+    const explicitEmployees = useMemo(() => ["Malak", "Omnia", "Asmaa", "Toqa", "Mena Ahmed"], []);
+
+    const allProductNames = useMemo(() => {
+        const namesSet = new Set<string>();
+        (products || []).forEach(p => {
+            if (p.name && p.name.trim()) namesSet.add(p.name.trim());
+        });
+        [...PRODUCTS_FACIAL, ...PRODUCTS_KITCHEN, ...PRODUCTS_TOILET, ...PRODUCTS_DOLPHIN].forEach(n => {
+            if (n && n.trim()) namesSet.add(n.trim());
+        });
+        sales.forEach(s => {
+            (s.items || []).forEach(item => {
+                if (item.name && item.name.trim()) namesSet.add(item.name.trim());
+            });
+        });
+        return Array.from(namesSet).sort();
+    }, [products, sales]);
+
+    const archiveEmployeesList = useMemo(() => {
+        const list: { id: string; name: string }[] = [];
+        const addedNames = new Set<string>();
+
+        // 1. Explicit employees
+        explicitEmployees.forEach(name => {
+            const u = usersList.find(usr => usr.name?.trim().toLowerCase() === name.toLowerCase() || usr.username?.trim().toLowerCase() === name.toLowerCase());
+            list.push({
+                id: u?.key || name,
+                name: u?.name || name
+            });
+            addedNames.add(name.toLowerCase());
+            if (u?.name) addedNames.add(u.name.toLowerCase());
+        });
+
+        // 2. All users in usersList
+        usersList.forEach(u => {
+            if (u.name && !addedNames.has(u.name.toLowerCase())) {
+                list.push({ id: u.key, name: u.name });
+                addedNames.add(u.name.toLowerCase());
+            }
+        });
+
+        // 3. All employees in sales
+        sales.forEach(s => {
+            if (s.employeeName && !addedNames.has(s.employeeName.toLowerCase())) {
+                list.push({ id: s.employeeName, name: s.employeeName });
+                addedNames.add(s.employeeName.toLowerCase());
+            }
+        });
+
+        // 4. All employees in archiveData
+        archiveData.forEach(h => {
+            if (h.employeeName && !addedNames.has(h.employeeName.toLowerCase())) {
+                list.push({ id: h.userId || h.employeeName, name: h.employeeName });
+                addedNames.add(h.employeeName.toLowerCase());
+            }
+        });
+
+        return list;
+    }, [explicitEmployees, usersList, sales, archiveData]);
 
     useEffect(() => {
         let unsubUsers, unsubTargets, unsubHistory;
@@ -327,8 +478,33 @@ const normalizeName = (name: string) => {
 
     const handleUpdateActiveTarget = async () => {
         if (!targetEmployeeKey) return alert('اختر الموظف أولاً');
-        await update(ref(db, `targets/${targetEmployeeKey}`), { finalTarget: currentActiveTarget });
-        alert('تم تعديل التارجت الحالي بنجاح وسيظهر التعديل فوراً للموظف');
+        const employee = usersList.find(u => u.key === targetEmployeeKey);
+        const now = new Date();
+        const currentMonth = `${now.getFullYear()}-${now.getMonth() + 1}`;
+
+        await update(ref(db, `targets/${targetEmployeeKey}`), { 
+            finalTarget: currentActiveTarget,
+            lastResetMonth: currentMonth
+        });
+
+        if (employee) {
+            push(ref(db, `notifications/${targetEmployeeKey}`), {
+                message: `تم تعديل تارجت شهر ${currentMonth} إلى ${(Number(currentActiveTarget) || 0).toLocaleString()} ج.م`,
+                sender: user.name,
+                timestamp: Date.now(),
+                isRead: false
+            });
+            if (employee.username && employee.username !== targetEmployeeKey) {
+                push(ref(db, `notifications/${employee.username}`), {
+                    message: `تم تعديل تارجت شهر ${currentMonth} إلى ${(Number(currentActiveTarget) || 0).toLocaleString()} ج.م`,
+                    sender: user.name,
+                    timestamp: Date.now(),
+                    isRead: false
+                });
+            }
+        }
+
+        alert('تم تعديل التارجت للشهر الحالي بنجاح وسيظهر التعديل فوراً للموظف');
     };
 
     const handleSaveTarget = async () => {
@@ -338,6 +514,7 @@ const normalizeName = (name: string) => {
 
         const now = new Date();
         const currentMonth = `${now.getFullYear()}-${now.getMonth() + 1}`;
+        const achievedNow = computeAchieved(employee.name, now.getFullYear(), now.getMonth(), targetEmployeeKey);
 
         const targetData: UserTarget = {
             userId: targetEmployeeKey,
@@ -346,12 +523,28 @@ const normalizeName = (name: string) => {
             suggestedAmount: suggestedTarget,
             growthPercent: growthPercent,
             finalTarget: finalTarget,
-            achieved: 0,
+            achieved: achievedNow,
             lastResetMonth: currentMonth
         };
 
         await set(ref(db, `targets/${targetEmployeeKey}`), targetData);
-        alert("تم اعتماد وإضافة التارجت بنجاح");
+
+        push(ref(db, `notifications/${targetEmployeeKey}`), {
+            message: `تم اعتماد تارجت شهر ${currentMonth} بقيمة ${(Number(finalTarget) || 0).toLocaleString()} ج.م لفرع ${targetMarket}`,
+            sender: user.name,
+            timestamp: Date.now(),
+            isRead: false
+        });
+        if (employee.username && employee.username !== targetEmployeeKey) {
+            push(ref(db, `notifications/${employee.username}`), {
+                message: `تم اعتماد تارجت شهر ${currentMonth} بقيمة ${(Number(finalTarget) || 0).toLocaleString()} ج.م لفرع ${targetMarket}`,
+                sender: user.name,
+                timestamp: Date.now(),
+                isRead: false
+            });
+        }
+
+        alert("تم اعتماد وإضافة التارجت للشهر الحالي بنجاح وتحديثه فوراً للموظف");
         setShowTargetModal(false);
     };
 
@@ -408,10 +601,8 @@ const normalizeName = (name: string) => {
                 });
             });
             setArchiveData(data);
-            setShowArchiveModal(true);
-        } else {
-            alert("لا توجد سجلات أرشيفية");
         }
+        setShowArchiveModal(true);
     };
 
     const copyArchiveData = () => {
@@ -422,10 +613,52 @@ const normalizeName = (name: string) => {
     };
 
     const getFilteredArchive = () => {
-        return archiveData.filter(h => 
-            (archiveEmployee === 'all' || h.userId === archiveEmployee) &&
-            (h.month.includes(archiveSearch) || h.employeeName.includes(archiveSearch))
-        );
+        const monthsSet = new Set<string>();
+        archiveData.forEach(h => {
+            if (h.month) monthsSet.add(h.month);
+        });
+        sales.forEach(s => {
+            const d = new Date(s.timestamp || s.date);
+            if (!isNaN(d.getTime())) {
+                const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                monthsSet.add(mKey);
+            }
+        });
+        monthsSet.add("2026-06");
+
+        const allRecords: TargetHistory[] = [...archiveData];
+
+        monthsSet.forEach(mKey => {
+            const [yStr, mStr] = mKey.split('-');
+            const y = parseInt(yStr, 10);
+            const mIdx = parseInt(mStr, 10) - 1;
+
+            archiveEmployeesList.forEach(emp => {
+                const achieved = computeAchieved(emp.name, y, mIdx, emp.id);
+                const existingIdx = allRecords.findIndex(r => r.month === mKey && (r.employeeName?.trim().toLowerCase() === emp.name.trim().toLowerCase() || r.userId === emp.id));
+                if (existingIdx === -1) {
+                    if (achieved > 0 || explicitEmployees.map(e => e.toLowerCase()).includes(emp.name.toLowerCase())) {
+                        const currentT = targetsList.find(t => t.employeeName?.trim().toLowerCase() === emp.name.trim().toLowerCase() || t.userId === emp.id);
+                        allRecords.push({
+                            id: `auto-${emp.id}-${mKey}`,
+                            userId: emp.id,
+                            employeeName: emp.name,
+                            month: mKey,
+                            targetAmount: currentT ? currentT.finalTarget : 0,
+                            achievedAmount: achieved
+                        });
+                    }
+                } else if (achieved > 0 && allRecords[existingIdx].achievedAmount === 0) {
+                    allRecords[existingIdx].achievedAmount = achieved;
+                }
+            });
+        });
+
+        return allRecords.filter(h => {
+            const matchesEmployee = archiveEmployee === 'all' || h.userId === archiveEmployee || h.employeeName?.trim().toLowerCase() === archiveEmployee.trim().toLowerCase();
+            const matchesSearch = !archiveSearch || h.month.includes(archiveSearch) || h.employeeName?.toLowerCase().includes(archiveSearch.toLowerCase());
+            return matchesEmployee && matchesSearch;
+        });
     };
 
     const computeAchieved = (employeeName: string, year: number, month: number, userId?: string) => {
@@ -481,10 +714,10 @@ const normalizeName = (name: string) => {
 
         return (
             <>
-                {finalTargets.map(t => {
+                {finalTargets.map((t, idx) => {
                     const perc = t.finalTarget > 0 ? ((t.achieved / t.finalTarget) * 100).toFixed(1) : 0;
                     return (
-                        <div key={t.userId} className="bg-black/30 border border-white/5 p-4 rounded-2xl">
+                        <div key={t.userId ? `target-${t.userId}-${idx}` : `target-${t.employeeName || idx}-${idx}`} className="bg-black/30 border border-white/5 p-4 rounded-2xl">
                             <div className="flex justify-between items-center mb-2">
                                 <div>
                                     <div className="font-bold text-white text-lg">{t.employeeName}</div>
@@ -507,11 +740,11 @@ const normalizeName = (name: string) => {
                             <div className="flex justify-between items-center bg-gray-800 p-3 rounded-xl">
                                 <div className="flex flex-col">
                                     <span className="text-[10px] opacity-50 text-white uppercase font-black">التارجت</span>
-                                    <span className="font-black text-yellow-400">{t.finalTarget.toLocaleString()}</span>
+                                    <span className="font-black text-yellow-400">{(Number(t?.finalTarget) || 0).toLocaleString()}</span>
                                 </div>
                                 <div className="flex flex-col text-left">
                                     <span className="text-[10px] opacity-50 text-white uppercase font-black">المحقق</span>
-                                    <span className="font-black text-green-400">{t.achieved.toLocaleString()}</span>
+                                    <span className="font-black text-green-400">{(Number(t?.achieved) || 0).toLocaleString()}</span>
                                 </div>
                             </div>
                         </div>
@@ -532,11 +765,11 @@ const normalizeName = (name: string) => {
                         <div className="mt-3 flex justify-between items-center bg-black/40 p-3 rounded-xl">
                             <div className="flex flex-col">
                                 <span className="text-[10px] opacity-70 text-white uppercase font-black">إجمالي التارجت</span>
-                                <span className="font-black text-yellow-400">{totalTarget.toLocaleString()}</span>
+                                <span className="font-black text-yellow-400">{(Number(totalTarget) || 0).toLocaleString()}</span>
                             </div>
                             <div className="flex flex-col text-left">
                                 <span className="text-[10px] opacity-70 text-white uppercase font-black">إجمالي المحقق</span>
-                                <span className="font-black text-green-400">{totalAchieved.toLocaleString()}</span>
+                                <span className="font-black text-green-400">{(Number(totalAchieved) || 0).toLocaleString()}</span>
                             </div>
                         </div>
                     </div>
@@ -666,10 +899,10 @@ const normalizeName = (name: string) => {
                     </div>
                 </div>
                 <div className="space-y-2">
-                    {dataList.map(item => {
+                    {dataList.map((item, idx) => {
                         const perc = item.targetAmount > 0 ? ((item.achievedAmount / item.targetAmount) * 100).toFixed(1) : "0.0";
                         return (
-                            <div key={`${item.userId}-${mKey}`} className="flex justify-between items-center bg-black/20 p-4 rounded-xl border border-white/5">
+                            <div key={`past-target-${item.userId || item.employeeName}-${mKey}-${idx}`} className="flex justify-between items-center bg-black/20 p-4 rounded-xl border border-white/5">
                                 <div className="min-w-[160px] max-w-[200px] flex flex-col justify-center text-right pr-2">
                                     <div className="font-bold text-white text-sm break-words whitespace-normal">{item.employeeName}</div>
                                     <div className="text-[11px] text-blue-300 mt-1 font-medium break-words whitespace-normal">{item.market}</div>
@@ -682,11 +915,11 @@ const normalizeName = (name: string) => {
                                 <div className="flex-1 flex justify-center gap-6">
                                     <div className="flex flex-col items-center">
                                         <span className="text-[10px] opacity-50 text-white uppercase font-black">التارجت</span>
-                                        <span className="font-black text-yellow-400 text-sm">{item.targetAmount.toLocaleString()} ج.م</span>
+                                        <span className="font-black text-yellow-400 text-sm">{(Number(item.targetAmount) || 0).toLocaleString()} ج.م</span>
                                     </div>
                                     <div className="flex flex-col items-center">
                                         <span className="text-[10px] opacity-50 text-white uppercase font-black">المحقق</span>
-                                        <span className="font-black text-green-400 text-sm">{item.achievedAmount.toLocaleString()} ج.م</span>
+                                        <span className="font-black text-green-400 text-sm">{(Number(item.achievedAmount) || 0).toLocaleString()} ج.م</span>
                                     </div>
                                 </div>
                                 <div className="w-20 text-left border-l border-white/10 pl-2 ml-2 flex flex-col justify-center">
@@ -712,11 +945,11 @@ const normalizeName = (name: string) => {
                         <div className="mt-3 flex justify-between items-center bg-black/40 p-3 rounded-xl">
                             <div className="flex flex-col">
                                 <span className="text-[10px] opacity-70 text-white uppercase font-black">إجمالي التارجت</span>
-                                <span className="font-black text-yellow-400">{totalTarget.toLocaleString()} ج.م</span>
+                                <span className="font-black text-yellow-400">{(Number(totalTarget) || 0).toLocaleString()} ج.م</span>
                             </div>
                             <div className="flex flex-col text-left">
                                 <span className="text-[10px] opacity-70 text-white uppercase font-black">إجمالي المحقق</span>
-                                <span className="font-black text-green-400">{totalAchieved.toLocaleString()} ج.م</span>
+                                <span className="font-black text-green-400">{(Number(totalAchieved) || 0).toLocaleString()} ج.م</span>
                             </div>
                         </div>
                     </div>
@@ -820,10 +1053,10 @@ const normalizeName = (name: string) => {
         if (filteredSales.length === 0) return alert("لا توجد بيانات للتصدير");
         const exportData = filteredSales.map(s => ({
             "اسم الموظف": s.employeeName,
-            "اليوم": new Date(s.timestamp).toLocaleDateString('ar-EG', { weekday: 'long' }),
+            "اليوم": s.timestamp ? new Date(s.timestamp).toLocaleDateString('ar-EG', { weekday: 'long' }) : '',
             "التاريخ": s.date,
             "اسم الفرع": s.market,
-            "إجمالي مبيعات اليوم": s.total.toLocaleString()
+            "إجمالي مبيعات اليوم": (Number(s.total) || 0).toLocaleString()
         }));
         exportToCSV(exportData, "Current_Sales_Log");
     };
@@ -921,36 +1154,56 @@ const normalizeName = (name: string) => {
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-bold flex items-center gap-2 text-white"><FileSpreadsheet /> سجل المبيعات</h2>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
                     {user.role === 'admin' && (
-                        <button onClick={() => setShowProductSalesModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold hover:bg-blue-700 transition">
-                            <Package size={18}/> مبيعات صنف
-                        </button>
-                    )}
-                    {user.role === 'admin' && (
-                        <>
-                            <button onClick={loadArchive} className="bg-gray-700 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold hover:bg-gray-600 transition">
-                                <History size={18}/> تارجت سابق
+                        <div className="relative">
+                            <button 
+                                onClick={() => setShowTargetDropdown(!showTargetDropdown)} 
+                                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold shadow-lg transition active:scale-95"
+                            >
+                                <Target size={18}/> خاص بالتارجت <ChevronDown size={16} className={`transition-transform duration-200 ${showTargetDropdown ? 'rotate-180' : ''}`}/>
                             </button>
-                            <button onClick={() => setShowTargetModal(true)} className="bg-purple-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold hover:bg-purple-700 transition">
-                                <Target size={18}/> إدارة التارجت
-                            </button>
-                            <button onClick={() => setShowCurrentTargetsModal(true)} className="bg-orange-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold hover:bg-orange-700 transition">
-                                <Target size={18}/> تارجت الشهر
-                            </button>
-                        </>
+                            {showTargetDropdown && (
+                                <div className="absolute left-0 mt-2 w-48 bg-gray-900 border border-white/10 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden backdrop-blur-xl animate-in fade-in zoom-in-95">
+                                    <button 
+                                        onClick={() => { setShowTargetDropdown(false); setShowProductSalesModal(true); }}
+                                        className="w-full text-right px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-600/30 flex items-center gap-2 transition"
+                                    >
+                                        <Package size={16} className="text-blue-400"/> مبيعات صنف
+                                    </button>
+                                    <button 
+                                        onClick={() => { setShowTargetDropdown(false); loadArchive(); }}
+                                        className="w-full text-right px-4 py-2.5 text-sm font-bold text-white hover:bg-gray-700/50 flex items-center gap-2 transition"
+                                    >
+                                        <History size={16} className="text-amber-400"/> تارجت سابق
+                                    </button>
+                                    <button 
+                                        onClick={() => { setShowTargetDropdown(false); setShowTargetModal(true); }}
+                                        className="w-full text-right px-4 py-2.5 text-sm font-bold text-white hover:bg-purple-600/30 flex items-center gap-2 transition"
+                                    >
+                                        <Target size={16} className="text-purple-400"/> إدارة التارجت
+                                    </button>
+                                    <button 
+                                        onClick={() => { setShowTargetDropdown(false); setShowCurrentTargetsModal(true); }}
+                                        className="w-full text-right px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-600/30 flex items-center gap-2 transition"
+                                    >
+                                        <Trophy size={16} className="text-orange-400"/> تارجت الشهر
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
             </div>
             
-            {user.role === 'admin' && (
-                <div className="flex flex-col md:flex-row gap-3">
-                    <button onClick={() => setShowExportModal(true)} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition active:scale-95"><Filter size={18}/> تصدير فترة معينة</button>
-                    <button onClick={handleExportCurrent} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition active:scale-95"><Download size={18}/> تصدير السجل الحالي</button>
+            {user.role === 'admin' && selectedSalesIds.length > 0 && (
+                <div className="flex flex-col md:flex-row gap-3 animate-in fade-in slide-in-from-top-2">
+                    <button onClick={() => setShowExportModal(true)} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition active:scale-95"><Filter size={18}/> تصدير فترة معينة ({selectedSalesIds.length})</button>
+                    <button onClick={handleExportCurrent} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition active:scale-95"><Download size={18}/> تصدير السجل الحالي ({selectedSalesIds.length})</button>
                 </div>
             )}
 
-            {stars && (
+            {stars && stars.first && (
                 <div className="bg-[#808080] p-6 rounded-3xl border border-white/20 shadow-2xl relative overflow-hidden group">
                     <div className="absolute -right-4 -top-4 opacity-10 group-hover:rotate-12 transition-transform duration-700"><Trophy size={120} /></div>
                     <div className="text-center mb-6 relative z-10">
@@ -963,7 +1216,7 @@ const normalizeName = (name: string) => {
                         <div className="flex flex-col items-center bg-white/10 p-4 rounded-2xl border border-yellow-400/50 min-w-[200px]">
                             <div className="text-yellow-400 text-sm font-black mb-1">المركز الأول</div>
                             <div className="text-2xl font-black text-white">{stars.first.name}</div>
-                            <div className="text-sm font-bold opacity-80 text-white mt-2">مبيعات: <span className="text-green-300 font-black">{stars.first.total.toLocaleString()} ج.م</span></div>
+                            <div className="text-sm font-bold opacity-80 text-white mt-2">مبيعات: <span className="text-green-300 font-black">{(Number(stars.first.total) || 0).toLocaleString()} ج.م</span></div>
                         </div>
 
                         {/* المركز الثاني */}
@@ -971,7 +1224,7 @@ const normalizeName = (name: string) => {
                             <div className="flex flex-col items-center bg-white/5 p-4 rounded-2xl border border-gray-400/50 min-w-[200px] md:scale-95">
                                 <div className="text-gray-300 text-sm font-black mb-1">المركز الثاني</div>
                                 <div className="text-xl font-black text-white">{stars.second.name}</div>
-                                <div className="text-sm font-bold opacity-80 text-white mt-2">مبيعات: <span className="text-green-300 font-black">{stars.second.total.toLocaleString()} ج.م</span></div>
+                                <div className="text-sm font-bold opacity-80 text-white mt-2">مبيعات: <span className="text-green-300 font-black">{(Number(stars.second.total) || 0).toLocaleString()} ج.م</span></div>
                             </div>
                         )}
                     </div>
@@ -1020,13 +1273,24 @@ const normalizeName = (name: string) => {
         <div className="font-bold text-xl text-blue-400">{sale.market}</div>
     </div>
                                 <div className="flex flex-wrap items-center gap-3 text-[10px] opacity-60 font-bold mt-1 text-white">
-                                    <span className="flex items-center gap-1"><Calendar size={12}/> {new Date(sale.timestamp).toLocaleDateString('ar-EG', { weekday: 'long' })} - {sale.date}</span>
+                                    <span className="flex items-center gap-1"><Calendar size={12}/> {sale.timestamp ? new Date(sale.timestamp).toLocaleDateString('ar-EG', { weekday: 'long' }) : ''} - {sale.date}</span>
                                     <span className="flex items-center gap-1"><UserIcon size={12}/> {sale.employeeName}</span>
                                     <span className="bg-white/10 px-2 py-0.5 rounded text-[9px] uppercase">{(sale as any).username || "System"}</span>
                                 </div>
                             </div>
+                            
                             <div className="flex gap-2">
+                                <button onClick={() => handleReaction(sale.id, 'like')} className={`p-1.5 rounded-lg ${(Array.isArray(sale.likes) ? sale.likes : (sale.likes ? Object.values(sale.likes) : [])).includes(user.username || user.name) ? 'bg-blue-600/30 text-blue-400' : 'bg-white/10 text-white/60'} hover:bg-blue-600/50 transition`}>
+                                    <ThumbsUp size={16} /> <span className="text-[10px]">{(Array.isArray(sale.likes) ? sale.likes : (sale.likes ? Object.values(sale.likes) : [])).length}</span>
+                                </button>
+                                <button onClick={() => handleReaction(sale.id, 'dislike')} className={`p-1.5 rounded-lg ${(Array.isArray(sale.dislikes) ? sale.dislikes : (sale.dislikes ? Object.values(sale.dislikes) : [])).includes(user.username || user.name) ? 'bg-red-600/30 text-red-400' : 'bg-white/10 text-white/60'} hover:bg-red-600/50 transition`}>
+                                    <ThumbsDown size={16} /> <span className="text-[10px]">{(Array.isArray(sale.dislikes) ? sale.dislikes : (sale.dislikes ? Object.values(sale.dislikes) : [])).length}</span>
+                                </button>
+                                <button onClick={() => setShowCommentInput(prev => ({ ...prev, [sale.id]: !prev[sale.id] }))} className="p-1.5 rounded-lg bg-white/10 text-white/60 hover:bg-white/20 transition flex items-center gap-1">
+                                    <MessageSquare size={16} /> <span className="text-[10px]">{(Array.isArray(sale.comments) ? sale.comments : (sale.comments ? Object.values(sale.comments) : [])).length}</span>
+                                </button>
                             </div>
+
                         </div>
                         <div className="overflow-hidden rounded-2xl bg-black/20 border border-white/5">
                             <table className="w-full text-[11px] text-center">
@@ -1035,7 +1299,7 @@ const normalizeName = (name: string) => {
                                 </thead>
                                 <tbody>
                                     {(sale.items || []).map((item, idx) => (
-                                        <tr key={idx} className="border-t border-white/5 text-white"><td className="py-2 px-3 text-right font-bold">{item.name}</td><td className="py-2">{item.price}</td><td className="py-2 font-black">{item.qty}</td><td className="py-2 px-3 text-green-400 font-black">{(item.qty * item.price).toLocaleString()}</td></tr>
+                                        <tr key={`item-${sale.id || 'sale'}-${idx}`} className="border-t border-white/5 text-white"><td className="py-2 px-3 text-right font-bold">{item.name}</td><td className="py-2">{item.price}</td><td className="py-2 font-black">{item.qty}</td><td className="py-2 px-3 text-green-400 font-black">{((Number(item.qty) || 0) * (Number(item.price) || 0)).toLocaleString()}</td></tr>
                                     ))}
                                 </tbody>
                             </table>
@@ -1043,7 +1307,7 @@ const normalizeName = (name: string) => {
                         <div className="mt-4 pt-4 border-t border-white/10 flex justify-between items-center text-white">
                             <div className="flex flex-col">
                                 <span className="text-xs font-bold opacity-60 uppercase tracking-tighter">إجمالي المبيعات:</span>
-                                <span className="text-xl font-black text-blue-400">{sale.total.toLocaleString()} ج.م</span>
+                                <span className="text-xl font-black text-blue-400">{(Number(sale.total) || 0).toLocaleString()} ج.م</span>
                             </div>
                             {user.role === 'admin' && (
                                 <div className="flex gap-2">
@@ -1056,6 +1320,41 @@ const normalizeName = (name: string) => {
                                 </div>
                             )}
                         </div>
+                        
+                        {(showCommentInput[sale.id] || ((Array.isArray(sale.comments) ? sale.comments : (sale.comments ? Object.values(sale.comments) : [])).length > 0)) && (
+                            <div className="mt-4 pt-4 border-t border-white/10">
+                                <div className="space-y-3 mb-4">
+                                    {(Array.isArray(sale.comments) ? sale.comments : (sale.comments ? Object.values(sale.comments) : [])).map((comment, cIdx) => (
+                                        <div key={comment.id || `comment-${sale.id}-${cIdx}`} className="bg-white/5 rounded-xl p-3 flex justify-between items-start">
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className="text-xs font-bold text-blue-300">{comment.senderName}</span>
+                                                    <span className="text-[9px] opacity-50">{comment.timestamp ? new Date(comment.timestamp).toLocaleString('ar-EG') : ''}</span>
+                                                </div>
+                                                <p className="text-xs text-white/90 whitespace-pre-wrap">{comment.text}</p>
+                                            </div>
+                                            <button onClick={() => handleLikeComment(sale.id, comment.id || `${cIdx}`)} className={`p-1.5 rounded-full ${comment.isLiked ? 'text-red-500 bg-red-500/10' : 'text-white/40 hover:text-white/80 hover:bg-white/10'} transition`}>
+                                                <Heart size={14} fill={comment.isLiked ? 'currentColor' : 'none'} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                                {showCommentInput[sale.id] && (
+                                    <div className="flex gap-2">
+                                        <textarea 
+                                            value={commentText[sale.id] || ''}
+                                            onChange={e => setCommentText(prev => ({ ...prev, [sale.id]: e.target.value.substring(0, 1000) }))}
+                                            placeholder="أضف تعليقاً..."
+                                            className="w-full bg-black/30 border border-white/10 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 min-h-[40px] max-h-[80px]"
+                                            maxLength={1000}
+                                        />
+                                        <button onClick={() => handleAddComment(sale.id)} disabled={!commentText[sale.id]?.trim()} className="bg-blue-600 text-white p-2.5 rounded-xl flex items-center justify-center disabled:opacity-50 hover:bg-blue-700 transition">
+                                            <Send size={16} />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>
@@ -1071,13 +1370,16 @@ const normalizeName = (name: string) => {
                         <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pr-1">
                             {editingSale.items.map((item, idx) => (
                                 <div key={idx} className="bg-black/20 p-4 rounded-2xl border border-white/5 space-y-3">
-                                    <input 
-                                        type="text" 
+                                    <select 
                                         className="w-full bg-gray-800 text-white p-3 rounded-xl border border-white/10 text-xs font-bold"
                                         value={item.name || ''}
                                         onChange={e => updateEditingItem(idx, 'name', e.target.value)}
-                                        placeholder="اسم الصنف"
-                                    />
+                                    >
+                                        <option value="">-- اختر الصنف (منتجات سوفت روز) --</option>
+                                        {allProductNames.map(pName => (
+                                            <option key={pName} value={pName}>{pName}</option>
+                                        ))}
+                                    </select>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
                                             <label className="block text-[10px] font-black opacity-40 uppercase mb-1 text-white">السعر</label>
@@ -1099,7 +1401,7 @@ const normalizeName = (name: string) => {
                                         </div>
                                     </div>
                                     <div className="text-left text-xs font-bold text-green-400">
-                                        المجموع: {(item.price * item.qty).toLocaleString()} ج.م
+                                        المجموع: {((Number(item.price) || 0) * (Number(item.qty) || 0)).toLocaleString()} ج.م
                                     </div>
                                 </div>
                             ))}
@@ -1108,7 +1410,7 @@ const normalizeName = (name: string) => {
                             <div className="text-white">
                                 <div className="text-[10px] font-black opacity-40 uppercase">إجمالي البيعة الجديد</div>
                                 <div className="text-2xl font-black text-blue-400">
-                                    {editingSale.items.reduce((acc, i) => acc + (i.price * i.qty), 0).toLocaleString()} ج.م
+                                    {(editingSale.items.reduce((acc, i) => acc + ((Number(i.price) || 0) * (Number(i.qty) || 0)), 0)).toLocaleString()} ج.م
                                 </div>
                             </div>
                             <button onClick={handleUpdateSale} className="bg-indigo-600 text-white font-bold py-3 px-8 rounded-2xl shadow-xl active:scale-[0.98] transition flex items-center gap-2">
@@ -1175,7 +1477,7 @@ const normalizeName = (name: string) => {
 
                             <div className="bg-purple-600/10 border border-purple-500/30 p-4 rounded-2xl">
                                 <label className="block text-[10px] font-black opacity-60 uppercase mb-1 text-purple-400">التارجت النهائي المعتمد (جديد)</label>
-                                <div className="text-3xl font-black text-white">{finalTarget.toLocaleString()} <span className="text-sm">ج.م</span></div>
+                                <div className="text-3xl font-black text-white">{(Number(finalTarget) || 0).toLocaleString()} <span className="text-sm">ج.م</span></div>
                             </div>
                             <button onClick={handleSaveTarget} className="w-full bg-purple-600 text-white font-bold py-4 rounded-2xl shadow-xl transition active:scale-95 flex items-center justify-center gap-2 mt-2">
                                 <Save size={20}/> اعتماد وإضافة التارجت الجديد
@@ -1200,7 +1502,7 @@ const normalizeName = (name: string) => {
                             </div>
                             <select className="p-3 rounded-xl bg-[#808080] text-white border border-white/10 text-xs font-bold" value={archiveEmployee} onChange={e => setArchiveEmployee(e.target.value)}>
                                 <option value="all">كل الموظفين</option>
-                                {usersList.map(u => <option key={u.key} value={u.key}>{u.name}</option>)}
+                                {archiveEmployeesList.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                             </select>
                             <button onClick={copyArchiveData} className="bg-blue-600 p-3 rounded-xl text-white hover:bg-blue-500 transition" title="نسخ البيانات">
                                 <Copy size={18}/>
@@ -1278,9 +1580,9 @@ const normalizeName = (name: string) => {
                                                         <div className="font-bold text-lg text-white">شهر {month}</div>
                                                         <div className="text-xs opacity-60 text-white mt-1 mb-2">{getMonthDateRange(month)}</div>
                                                         <div className="flex flex-wrap gap-2 text-xs">
-                                                            <span className="bg-yellow-500/20 text-yellow-300 px-2 py-1 rounded">إجمالي التارجت: {totalTarget.toLocaleString()}</span>
-                                                            <span className="bg-green-500/20 text-green-300 px-2 py-1 rounded">المحقق: {totalAchieved.toLocaleString()}</span>
-                                                            <span className="bg-red-500/20 text-red-300 px-2 py-1 rounded">المتبقي: {totalRemaining.toLocaleString()}</span>
+                                                            <span className="bg-yellow-500/20 text-yellow-300 px-2 py-1 rounded">إجمالي التارجت: {(Number(totalTarget) || 0).toLocaleString()}</span>
+                                                            <span className="bg-green-500/20 text-green-300 px-2 py-1 rounded">المحقق: {(Number(totalAchieved) || 0).toLocaleString()}</span>
+                                                            <span className="bg-red-500/20 text-red-300 px-2 py-1 rounded">المتبقي: {(Number(totalRemaining) || 0).toLocaleString()}</span>
                                                             <span className="bg-blue-500/20 text-blue-300 px-2 py-1 rounded">النسبة: {totalPerc}%</span>
                                                         </div>
                                                     </div>
@@ -1291,18 +1593,18 @@ const normalizeName = (name: string) => {
 
                                                 {isExpanded && (
                                                     <div className="space-y-2 mt-2 pt-3 border-t border-white/10">
-                                                        {histories.map(h => {
+                                                        {histories.map((h, hIdx) => {
                                                             const perc = h.targetAmount > 0 ? Math.min(100, Math.round((h.achievedAmount / h.targetAmount) * 100)) : 0;
                                                             return (
-                                                            <div key={h.id} className="p-3 rounded-xl border border-white/5 bg-gray-800/50 flex justify-between items-center hover:bg-gray-800 transition">
+                                                            <div key={h.id ? `hist-${h.id}-${hIdx}` : `hist-${month}-${h.employeeName || hIdx}-${hIdx}`} className="p-3 rounded-xl border border-white/5 bg-gray-800/50 flex justify-between items-center hover:bg-gray-800 transition">
                                                                 <div className="font-bold text-sm text-blue-400 flex items-center gap-2">
                                                                     {h.employeeName}
                                                                     <span className="text-xs bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded">{perc}%</span>
                                                                 </div>
                                                                 <div className="text-left">
-                                                                    <div className="text-[10px] font-bold opacity-40 uppercase mb-1">التارجت: {h.targetAmount.toLocaleString()}</div>
+                                                                    <div className="text-[10px] font-bold opacity-40 uppercase mb-1">التارجت: {(Number(h.targetAmount) || 0).toLocaleString()}</div>
                                                                     <div className={`text-sm font-black ${h.achievedAmount >= h.targetAmount ? 'text-green-400' : 'text-orange-400'}`}>
-                                                                        المحقق: {h.achievedAmount.toLocaleString()}
+                                                                        المحقق: {(Number(h.achievedAmount) || 0).toLocaleString()}
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -1350,29 +1652,38 @@ const normalizeName = (name: string) => {
                                     {marketsWithSales.map(m => <option key={m} value={m}>{m}</option>)}
                                 </select>
                             </div>
-                            <div>
-                                <label className="block text-[10px] font-black opacity-40 uppercase mb-1 text-white">من تاريخ</label>
-                                <input type="date" className="w-full p-3 rounded-xl bg-gray-800 text-white border border-white/10 text-xs" value={reportStart} onChange={e => setReportStart(e.target.value)} />
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-black opacity-40 uppercase mb-1 text-white">إلى تاريخ</label>
-                                <input type="date" className="w-full p-3 rounded-xl bg-gray-800 text-white border border-white/10 text-xs" value={reportEnd} onChange={e => setReportEnd(e.target.value)} />
-                            </div>
-                        </div>
 
+                        </div>
+<button onClick={() => setShowProductSalesDataModal(true)} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-lg mt-4">اظهر البيانات</button>
+                    </div>
+                </div>
+            )}
+            
+            {showProductSalesDataModal && (
+                <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+                    <div className="bg-gray-900 border border-white/20 w-full max-w-2xl rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[95vh] my-auto">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-bold text-xl text-white flex items-center gap-2"><Package className="text-blue-500"/> بيانات مبيعات الأصناف</h3>
+                            <button onClick={() => setShowProductSalesDataModal(false)} className="text-white/50 hover:text-white"><X size={20}/></button>
+                        </div>
+                        <div className="flex gap-2 mb-4">
+                                <input type="date" className="w-full p-1.5 rounded-lg bg-gray-800 text-white border border-white/10 text-[10px]" value={reportStart} onChange={e => setReportStart(e.target.value)} />
+                                <input type="date" className="w-full p-1.5 rounded-lg bg-gray-800 text-white border border-white/10 text-[10px]" value={reportEnd} onChange={e => setReportEnd(e.target.value)} />
+                        </div>
                         <div className="grid grid-cols-2 gap-4 mb-6">
+                            
                             <div className="bg-blue-600/10 border border-blue-500/30 p-4 rounded-2xl flex items-center gap-3">
                                 <ShoppingBag className="text-blue-400" size={24}/>
                                 <div>
                                     <div className="text-[10px] font-black opacity-40 uppercase text-white">الكمية المباعة</div>
-                                    <div className="text-xl font-black text-white">{reportResults.totalQty.toLocaleString()} <span className="text-[10px] opacity-60">قطعة</span></div>
+                                    <div className="text-xl font-black text-white">{(Number(reportResults?.totalQty) || 0).toLocaleString()} <span className="text-[10px] opacity-60">قطعة</span></div>
                                 </div>
                             </div>
                             <div className="bg-green-600/10 border border-green-500/30 p-4 rounded-2xl flex items-center gap-3">
                                 <Calculator className="text-green-400" size={24}/>
                                 <div>
                                     <div className="text-[10px] font-black opacity-40 uppercase text-white">القيمة الإجمالية</div>
-                                    <div className="text-xl font-black text-white">{reportResults.totalValue.toLocaleString()} <span className="text-[10px] opacity-60">ج.م</span></div>
+                                    <div className="text-xl font-black text-white">{(Number(reportResults?.totalValue) || 0).toLocaleString()} <span className="text-[10px] opacity-60">ج.م</span></div>
                                 </div>
                             </div>
                         </div>
@@ -1388,25 +1699,25 @@ const normalizeName = (name: string) => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {(Object.entries(reportResults.itemsGrouped) as [string, { price: number; qty: number; total: number }][]).map(([name, stats], idx) => (
+                                    {(Object.entries(reportResults?.itemsGrouped || {}) as [string, { price: number; qty: number; total: number }][]).map(([name, stats], idx) => (
                                         <tr key={idx} className="border-t border-white/5 text-white">
                                             <td className="py-2 px-2 text-right font-bold truncate max-w-[150px]">{name}</td>
-                                            <td className="py-2">{stats.price.toLocaleString()}</td>
-                                            <td className="py-2 font-black">{stats.qty.toLocaleString()}</td>
-                                            <td className="py-2 px-2 text-green-400 font-black">{stats.total.toLocaleString()}</td>
+                                            <td className="py-2">{(Number(stats?.price) || 0).toLocaleString()}</td>
+                                            <td className="py-2 font-black">{(Number(stats?.qty) || 0).toLocaleString()}</td>
+                                            <td className="py-2 px-2 text-green-400 font-black">{(Number(stats?.total) || 0).toLocaleString()}</td>
                                         </tr>
                                     ))}
-                                    {Object.keys(reportResults.itemsGrouped).length > 0 && (
+                                    {Object.keys(reportResults?.itemsGrouped || {}).length > 0 && (
                                         <tr className="border-t-2 border-white/20 bg-white/5 font-black text-white">
                                             <td className="py-3 px-2 text-right uppercase tracking-widest" colSpan={3}>الإجمالي العام</td>
-                                            <td className="py-3 px-2 text-green-400 text-sm">{reportResults.totalValue.toLocaleString()}</td>
+                                            <td className="py-3 px-2 text-green-400 text-sm">{(Number(reportResults?.totalValue) || 0).toLocaleString()}</td>
                                         </tr>
                                     )}
                                 </tbody>
                              </table>
                         </div>
 
-                        {reportItem === 'all' && Object.keys(reportResults.itemsGrouped).length > 0 && (
+                        {reportItem === 'all' && Object.keys(reportResults?.itemsGrouped || {}).length > 0 && (
                             <button 
                                 onClick={handleExportProductSales}
                                 className="w-full bg-green-600 text-white font-bold py-4 rounded-2xl shadow-xl transition active:scale-95 flex items-center justify-center gap-2 mt-4"
@@ -1428,9 +1739,10 @@ const normalizeName = (name: string) => {
                     <div><label className="block text-xs font-bold mb-1 opacity-60 text-white">الماركت (اختياري)</label><select className="w-full p-3 rounded-xl bg-gray-800 text-white border border-white/10" value={exportMarket} onChange={e => setExportMarket(e.target.value)}><option value="">كل الماركتات</option>{markets.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
                     <div><label className="block text-xs font-bold mb-1 opacity-60 text-white">الموظف (اختياري)</label><select className="w-full p-3 rounded-xl bg-gray-800 text-white border border-white/10" value={exportEmployee} onChange={e => setExportEmployee(e.target.value)}><option value="">كل الموظفين</option>{Array.from(new Set(sales.map(s => s.employeeName || s.username || "System"))).filter(Boolean).map(name => <option key={name} value={name}>{name}</option>)}</select></div>
                     <button onClick={handleExportPeriod} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-xl transition active:scale-95">بدء التحميل (Excel)</button>
-                  </div>
+                  
+                        </div>
+                    </div>
                 </div>
-              </div>
             )}
             {showCurrentTargetsModal && (
                 <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
@@ -1537,7 +1849,7 @@ const normalizeName = (name: string) => {
                                 const year = parseInt(yStr);
                                 const month = parseInt(mStr) - 1;
                                 
-                                const monthTargets = targetsList.map(t => {
+                                const monthTargets = targetsList.map((t, tIdx) => {
                                     const achieved = computeAchieved(t.employeeName, year, month, t.userId);
                                     let pastTarget = t.finalTarget;
                                     // Try to fetch historical target if available
@@ -1551,7 +1863,7 @@ const normalizeName = (name: string) => {
                                     const perc = pastTarget > 0 ? ((achieved / pastTarget) * 100).toFixed(1) : 0;
 
                                     return (
-                                        <div key={`${t.userId}-${mKey}`} className="flex justify-between items-center bg-black/20 p-3 rounded-xl border border-white/5">
+                                        <div key={`month-target-${t.userId || t.employeeName}-${mKey}-${tIdx}`} className="flex justify-between items-center bg-black/20 p-3 rounded-xl border border-white/5">
                                             <div className="w-1/3">
                                                 <div className="font-bold text-white text-sm truncate">{t.employeeName}</div>
                                                 <div className="text-[10px] opacity-60 text-white truncate">{t.market}</div>
@@ -1559,11 +1871,11 @@ const normalizeName = (name: string) => {
                                             <div className="flex-1 flex justify-center gap-6">
                                                 <div className="flex flex-col items-center">
                                                     <span className="text-[10px] opacity-50 text-white uppercase font-black">التارجت</span>
-                                                    <span className="font-black text-yellow-400 text-sm">{pastTarget.toLocaleString()}</span>
+                                                    <span className="font-black text-yellow-400 text-sm">{(Number(pastTarget) || 0).toLocaleString()}</span>
                                                 </div>
                                                 <div className="flex flex-col items-center">
                                                     <span className="text-[10px] opacity-50 text-white uppercase font-black">المحقق</span>
-                                                    <span className="font-black text-green-400 text-sm">{achieved.toLocaleString()}</span>
+                                                    <span className="font-black text-green-400 text-sm">{(Number(achieved) || 0).toLocaleString()}</span>
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-1.5 border-r pr-3 mr-1 border-white/10">
@@ -1611,12 +1923,12 @@ const normalizeName = (name: string) => {
                         <p className="text-gray-400 mt-2 text-lg">{new Date().toLocaleDateString('ar-EG')}</p>
                     </div>
                     <div className="space-y-4">
-                        {sales.filter(s => selectedSalesIds.includes(s.id)).map(sale => (
-                            <div key={sale.id} className="p-5 rounded-3xl border border-white/20 bg-gray-800 shadow-2xl">
+                        {sales.filter(s => selectedSalesIds.includes(s.id)).map((sale, sIdx) => (
+                            <div key={`print-sale-${sale.id}-${sIdx}`} className="p-5 rounded-3xl border border-white/20 bg-gray-800 shadow-2xl">
                                 <div>
                                     <div className="font-bold text-2xl text-blue-400 mb-2">{sale.market}</div>
                                     <div className="flex flex-wrap items-center gap-4 text-sm opacity-80 font-bold mt-1 text-white mb-4">
-                                        <span className="flex items-center gap-1"><Calendar size={16}/> {new Date(sale.timestamp).toLocaleDateString('ar-EG', { weekday: 'long' })} - {sale.date}</span>
+                                        <span className="flex items-center gap-1"><Calendar size={16}/> {sale.timestamp ? new Date(sale.timestamp).toLocaleDateString('ar-EG', { weekday: 'long' }) : ''} - {sale.date}</span>
                                         <span className="flex items-center gap-1"><UserIcon size={16}/> {sale.employeeName}</span>
                                     </div>
                                 </div>
@@ -1627,16 +1939,16 @@ const normalizeName = (name: string) => {
                                         </thead>
                                         <tbody>
                                             {(sale.items || []).map((item, idx) => (
-                                                <tr key={idx} className="border-t border-white/5">
+                                                <tr key={`print-item-${sale.id}-${idx}`} className="border-t border-white/5">
                                                     <td className="py-3 px-4 text-right text-gray-200">{item.name}</td>
                                                     <td className="py-3 text-gray-400">{item.price}</td>
                                                     <td className="py-3 font-bold text-white bg-white/5">{item.qty}</td>
-                                                    <td className="py-3 px-4 font-bold text-blue-300">{(item.qty * item.price).toLocaleString()} <span className="text-xs">ج.م</span></td>
+                                                    <td className="py-3 px-4 font-bold text-blue-300">{((Number(item.qty) || 0) * (Number(item.price) || 0)).toLocaleString()} <span className="text-xs">ج.م</span></td>
                                                 </tr>
                                             ))}
                                         </tbody>
                                         <tfoot className="bg-blue-600/20 border-t border-blue-500/30">
-                                            <tr><td colSpan={3} className="py-4 px-4 text-left font-black text-white text-lg">الإجمالي:</td><td className="py-4 px-4 font-black text-blue-400 text-xl">{sale.total.toLocaleString()} <span className="text-sm">ج.م</span></td></tr>
+                                            <tr><td colSpan={3} className="py-4 px-4 text-left font-black text-white text-lg">الإجمالي:</td><td className="py-4 px-4 font-black text-blue-400 text-xl">{(Number(sale.total) || 0).toLocaleString()} <span className="text-sm">ج.م</span></td></tr>
                                         </tfoot>
                                     </table>
                                 </div>
@@ -1650,13 +1962,13 @@ const normalizeName = (name: string) => {
                         <h2 className="text-3xl font-black text-white">تقرير التارجت للموظف</h2>
                     </div>
                     <div className="space-y-4">
-                        {targetsList.filter(t => t.userId === selectedTargetEmployeeToShare).map(t => {
+                        {targetsList.filter(t => t.userId === selectedTargetEmployeeToShare).map((t, tIdx) => {
                             const now = new Date();
                             const achieved = computeAchieved(t.employeeName, now.getFullYear(), now.getMonth(), t.userId);
                             const ratio = t.finalTarget > 0 ? (achieved / t.finalTarget) * 100 : 0;
                             const remaining = Math.max(0, t.finalTarget - achieved);
                             return (
-                            <div key={t.userId} className="p-6 bg-gray-800 rounded-2xl border border-white/20">
+                            <div key={`print-target-${t.userId || t.employeeName}-${tIdx}`} className="p-6 bg-gray-800 rounded-2xl border border-white/20">
                                 <div className="flex items-center gap-4 mb-4">
                                     <div className="w-16 h-16 rounded-full bg-blue-500 flex items-center justify-center text-white text-3xl font-bold shadow-lg">
                                         {t.employeeName.charAt(0)}
@@ -1669,11 +1981,11 @@ const normalizeName = (name: string) => {
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="bg-black/40 p-4 rounded-xl border border-white/5">
                                         <div className="text-gray-400 text-sm mb-1">التارجت المطلوب</div>
-                                        <div className="text-3xl font-black text-white">{t.finalTarget.toLocaleString()} <span className="text-sm text-gray-500">ج.م</span></div>
+                                        <div className="text-3xl font-black text-white">{(Number(t?.finalTarget) || 0).toLocaleString()} <span className="text-sm text-gray-500">ج.م</span></div>
                                     </div>
                                     <div className="bg-blue-900/30 p-4 rounded-xl border border-blue-500/20">
                                         <div className="text-blue-300 text-sm mb-1">المُحقق</div>
-                                        <div className="text-3xl font-black text-blue-400">{achieved.toLocaleString()} <span className="text-sm text-blue-500/50">ج.م</span></div>
+                                        <div className="text-3xl font-black text-blue-400">{(Number(achieved) || 0).toLocaleString()} <span className="text-sm text-blue-500/50">ج.م</span></div>
                                     </div>
                                 </div>
                                 <div className="mt-6">

@@ -187,9 +187,20 @@ return () => { unsubUsers(); unsubBalances(); unsubHistory(); };
         const snap = await get(balanceRef);
         let cur = snap.exists() ? snap.val() : { userId: selectedUser, employeeName: targetUser.name || targetUser.username || 'Unknown', annual: 21, casual: 7, sick: 0, exams: 0, unpaid: 0 };
         
+        let effectiveType = leaveType;
         let targetBalanceField = leaveType;
         if (leaveType === 'custom') {
             targetBalanceField = 'annual';
+        }
+
+        // معالجة نفاد رصيد الإجازات السنوية أو العارضة
+        if (leaveType === 'annual' || leaveType === 'casual') {
+            const availableBal = Number(cur[leaveType] || 0);
+            if (availableBal <= 0 || availableBal < Number(leaveDays)) {
+                alert("انتهي رصيد السنوي والعارضه");
+                effectiveType = 'unpaid';
+                targetBalanceField = 'unpaid';
+            }
         }
 
         if (typeLogic[targetBalanceField] === 'remaining') {
@@ -198,7 +209,7 @@ return () => { unsubUsers(); unsubBalances(); unsubHistory(); };
             cur[targetBalanceField] = Number(cur[targetBalanceField] || 0) + Number(leaveDays);
         }
         let deductedFromAnnual = false;
-        if (leaveType === 'summer') {
+        if (effectiveType === 'summer') {
             if (Number(cur['annual'] || 0) > 0) {
                 cur['annual'] = Number(cur['annual'] || 0) - Number(leaveDays);
                 deductedFromAnnual = true;
@@ -212,13 +223,13 @@ return () => { unsubUsers(); unsubBalances(); unsubHistory(); };
             employeeName: targetUser.name || targetUser.username || 'Unknown',
             date: leaveDate,
             days: Number(leaveDays),
-            type: leaveType,
+            type: effectiveType,
             timestamp: new Date(leaveDate).getTime()
         };
-        if (leaveType === 'custom') {
+        if (effectiveType === 'custom') {
             newLeaveData.customLabel = customLeaveName.trim();
         }
-        if (leaveType === 'summer') {
+        if (effectiveType === 'summer') {
             newLeaveData.deductedFromAnnual = deductedFromAnnual;
         }
         await push(ref(db, 'leave_history'), newLeaveData);
@@ -466,6 +477,67 @@ return () => { unsubUsers(); unsubBalances(); unsubHistory(); };
 )}
                     </div>
                 )}
+            </div>
+
+            {/* ودجت دورة الشهر ورصيد الإجازات المتبقي */}
+            <div className="bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 p-5 rounded-3xl border border-white/10 shadow-2xl space-y-4">
+                <div className="flex flex-col md:flex-row justify-between items-center gap-4 border-b border-white/10 pb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-3 bg-blue-600/20 text-blue-400 rounded-2xl border border-blue-500/30">
+                            <CalendarIcon size={22} />
+                        </div>
+                        <div>
+                            <div className="text-xs font-black text-blue-400 uppercase tracking-wider">نطاق دورة الشهر (من 21 إلى 20)</div>
+                            <div className="text-sm font-bold text-white mt-0.5">
+                                من {periodDate.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })} إلى {getPeriodEnd(periodDate).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 bg-black/30 p-1.5 rounded-2xl border border-white/5">
+                        <button onClick={() => changePeriod(-1)} className="p-2 hover:bg-white/10 text-white rounded-xl transition flex items-center gap-1 text-xs font-bold">
+                            <ChevronRight size={16}/> الشهر السابق
+                        </button>
+                        <span className="px-3 text-xs font-black text-amber-400">
+                            {periodDate.toLocaleDateString('ar-EG', { month: 'short', year: 'numeric' })}
+                        </span>
+                        <button onClick={() => changePeriod(1)} className="p-2 hover:bg-white/10 text-white rounded-xl transition flex items-center gap-1 text-xs font-bold">
+                            الشهر القادم <ChevronLeft size={16}/>
+                        </button>
+                    </div>
+                </div>
+
+                {/* بطاقات الرصيد المتبقي السريع */}
+                {(() => {
+                    const currentUserKey = user.key || usersList.find(u => u.name === user.name)?.key || (displayedUsers.length === 1 ? displayedUsers[0].key : null);
+                    const userBal = currentUserKey && balances[currentUserKey] ? balances[currentUserKey] : {
+                        annual: 21,
+                        casual: 7,
+                        unpaid: 0,
+                        sick: 0
+                    };
+                    const displayName = user.role === 'admin' && displayedUsers.length > 1 ? "نظرة عامة على الأرصدة" : (user.name || "رصيدي المتبقي");
+
+                    return (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div className="bg-black/30 p-3.5 rounded-2xl border border-green-500/20 flex flex-col items-center justify-center">
+                                <span className="text-[11px] font-black text-green-400 uppercase">متبقي السنوي</span>
+                                <span className="text-2xl font-black text-green-400 mt-1">{userBal.annual ?? 21} <span className="text-xs">يوم</span></span>
+                            </div>
+                            <div className="bg-black/30 p-3.5 rounded-2xl border border-yellow-500/20 flex flex-col items-center justify-center">
+                                <span className="text-[11px] font-black text-yellow-400 uppercase">متبقي العارضة</span>
+                                <span className="text-2xl font-black text-yellow-400 mt-1">{userBal.casual ?? 7} <span className="text-xs">يوم</span></span>
+                            </div>
+                            <div className="bg-black/30 p-3.5 rounded-2xl border border-orange-500/20 flex flex-col items-center justify-center">
+                                <span className="text-[11px] font-black text-orange-400 uppercase">غياب بأذن</span>
+                                <span className="text-2xl font-black text-orange-400 mt-1">{userBal.unpaid ?? 0} <span className="text-xs">يوم</span></span>
+                            </div>
+                            <div className="bg-black/30 p-3.5 rounded-2xl border border-red-500/20 flex flex-col items-center justify-center">
+                                <span className="text-[11px] font-black text-red-400 uppercase">مرضي</span>
+                                <span className="text-2xl font-black text-red-400 mt-1">{userBal.sick ?? 0} <span className="text-xs">يوم</span></span>
+                            </div>
+                        </div>
+                    );
+                })()}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
