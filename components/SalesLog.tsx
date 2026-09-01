@@ -22,9 +22,13 @@ interface Props {
 
 const SalesLog: React.FC<Props> = ({ user, markets, theme, products }) => {
     const [sales, setSales] = useState<SaleRecord[]>([]);
+    const [usersList, setUsersList] = useState<User[]>([]);
 
     const [commentText, setCommentText] = useState<{[key: string]: string}>({});
+    const [commentSender, setCommentSender] = useState<{[key: string]: string}>({});
     const [showCommentInput, setShowCommentInput] = useState<{[key: string]: boolean}>({});
+    const [editingCommentId, setEditingCommentId] = useState<{[saleId: string]: string | null}>({});
+    const [editingCommentText, setEditingCommentText] = useState<{[commentId: string]: string}>({});
 
     const handleReaction = async (saleId: string, type: 'like' | 'dislike') => {
         const sale = sales.find(s => s.id === saleId);
@@ -54,18 +58,58 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme, products }) => {
         await update(ref(db, `sales/${saleId}`), { likes, dislikes });
     };
 
+    const adminCommenters = useMemo(() => {
+        const list: { id: string; name: string }[] = [];
+        const seen = new Set<string>();
+
+        // 1. Mr. Amir (حساب admin)
+        list.push({ id: 'admin', name: 'Mr. Amir' });
+        seen.add('mr. amir');
+        seen.add('admin');
+
+        // 2. Mr. Khaled attef
+        list.push({ id: 'khaled_attef', name: 'Mr. Khaled attef' });
+        seen.add('mr. khaled attef');
+        seen.add('khaled attef');
+        seen.add('khaled');
+
+        // 3. الحسابات المسجلة بوظيفة مسؤول / admin من قائمة المستخدمين
+        usersList.forEach(u => {
+            const uRole = (u.role || '').toLowerCase();
+            if (uRole === 'admin' || uRole === 'manager' || uRole === 'supervisor' || uRole === 'مسؤول') {
+                let displayName = u.name;
+                const uname = (u.username || '').toLowerCase();
+                if (uname === 'admin' || displayName.toLowerCase() === 'admin') {
+                    displayName = 'Mr. Amir';
+                } else if (uname.includes('khaled') || displayName.toLowerCase().includes('khaled')) {
+                    displayName = 'Mr. Khaled attef';
+                }
+                if (displayName && !seen.has(displayName.toLowerCase())) {
+                    list.push({ id: u.key || u.username || displayName, name: displayName });
+                    seen.add(displayName.toLowerCase());
+                }
+            }
+        });
+
+        return list;
+    }, [usersList]);
+
     const handleAddComment = async (saleId: string) => {
         const text = commentText[saleId]?.trim();
         if (!text) return;
         
         const sale = sales.find(s => s.id === saleId);
         if (!sale) return;
+
+        const sender = commentSender[saleId] || (user.username === 'admin' ? 'Mr. Amir' : (adminCommenters[0]?.name || 'Mr. Amir'));
+        const senderObj = adminCommenters.find(a => a.name === sender);
+        const senderId = senderObj?.id || user.username || user.name;
         
         const newComment = {
-            id: Date.now().toString(),
+            id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 5),
             text,
-            senderId: user.username || user.name,
-            senderName: user.name,
+            senderId: senderId,
+            senderName: sender,
             timestamp: Date.now(),
             isLiked: false
         };
@@ -81,12 +125,49 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme, products }) => {
         const notifTarget = sale.username || (employeeUser ? employeeUser.username : null);
         if (notifTarget && notifTarget !== user.username) {
             push(ref(db, `notifications/${notifTarget}`), {
-                message: `أضاف ${user.name} تعليقاً على مبيعاتك في ${sale.market}`,
-                sender: user.name,
+                message: `أضاف ${sender} تعليقاً على مبيعاتك في ${sale.market}`,
+                sender: sender,
                 timestamp: Date.now(),
                 isRead: false
             });
         }
+    };
+
+    const handleDeleteComment = async (saleId: string, commentId: string) => {
+        if (!confirm("هل أنت متأكد من حذف هذا التعليق؟")) return;
+        const sale = sales.find(s => s.id === saleId);
+        if (!sale) return;
+
+        const currentComments = Array.isArray(sale.comments) ? sale.comments : (sale.comments ? Object.values(sale.comments) : []);
+        const comments = currentComments.filter((c, idx) => (c.id ? c.id !== commentId : `${idx}` !== commentId));
+
+        await update(ref(db, `sales/${saleId}`), { comments });
+    };
+
+    const handleSaveEditedComment = async (saleId: string, commentId: string) => {
+        const newText = (editingCommentText[commentId] || '').trim();
+        if (!newText) {
+            alert("لا يمكن حفظ تعليق فارغ");
+            return;
+        }
+        const sale = sales.find(s => s.id === saleId);
+        if (!sale) return;
+
+        const currentComments = Array.isArray(sale.comments) ? sale.comments : (sale.comments ? Object.values(sale.comments) : []);
+        const comments = currentComments.map((c, idx) => {
+            const cKey = c.id || `${idx}`;
+            if (cKey === commentId) {
+                return {
+                    ...c,
+                    text: newText,
+                    editedAt: Date.now()
+                };
+            }
+            return c;
+        });
+
+        await update(ref(db, `sales/${saleId}`), { comments });
+        setEditingCommentId(prev => ({ ...prev, [saleId]: null }));
     };
 
     const handleLikeComment = async (saleId: string, commentId: string) => {
@@ -114,7 +195,6 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme, products }) => {
     const [selectedSalesIds, setSelectedSalesIds] = useState<string[]>([]);
     const [visibleCount, setVisibleCount] = useState(15);
     const [selectedTargetEmployeeToShare, setSelectedTargetEmployeeToShare] = useState<string>('');
-    const [usersList, setUsersList] = useState<User[]>([]);
     const [filterDate, setFilterDate] = useState('');
     const [filterEmployee, setFilterEmployee] = useState('');
     const [filterMarket, setFilterMarket] = useState('');
@@ -852,58 +932,80 @@ const normalizeName = (name: string) => {
 
     const getPastMonthTargetsData = (mKey: string) => {
         const [yStr, mStr] = mKey.split('-');
-        const year = parseInt(yStr);
-        const month = parseInt(mStr) - 1; // Month index (0-11)
+        const year = parseInt(yStr, 10);
+        const month = parseInt(mStr, 10) - 1; // Month index (0-11)
         
         const exactNames = findExactEmployeeNames();
-        const targetNames = [exactNames.omnia, exactNames.toqa, exactNames.mena];
+        const targetNames = [exactNames.omnia, exactNames.toqa, exactNames.mena].filter(Boolean);
 
         const candidates = new Map<string, { userId: string; employeeName: string; market: string }>();
 
         targetsList.forEach(t => {
-            candidates.set(t.employeeName, {
-                userId: t.userId,
-                employeeName: t.employeeName,
-                market: t.market
-            });
+            if (t.employeeName && typeof t.employeeName === 'string' && t.employeeName.trim().length > 0) {
+                const name = t.employeeName.trim();
+                candidates.set(name, {
+                    userId: t.userId || name,
+                    employeeName: name,
+                    market: t.market || ''
+                });
+            }
         });
 
         archiveData.forEach(h => {
-            if (h.month === mKey && !(h as any).isDeleted) {
+            if (h.month === mKey && !(h as any).isDeleted && h.employeeName && typeof h.employeeName === 'string' && h.employeeName.trim().length > 0) {
+                const name = h.employeeName.trim();
                 let market = '';
-                const existing = candidates.get(h.employeeName);
-                if (existing) {
+                const existing = candidates.get(name);
+                if (existing && existing.market) {
                     market = existing.market;
                 } else {
-                    const foundTarget = targetsList.find(t => t.employeeName === h.employeeName);
-                    if (foundTarget) {
+                    const foundTarget = targetsList.find(t => t.employeeName?.trim() === name);
+                    if (foundTarget && foundTarget.market) {
                         market = foundTarget.market;
                     } else {
-                        const foundSale = sales.find(s => s.employeeName === h.employeeName);
+                        const foundSale = sales.find(s => s.employeeName?.trim() === name);
                         market = foundSale ? foundSale.market : 'غير محدد';
                     }
                 }
-                candidates.set(h.employeeName, {
-                    userId: h.userId,
-                    employeeName: h.employeeName,
+                candidates.set(name, {
+                    userId: h.userId || name,
+                    employeeName: name,
                     market: market || 'غير محدد'
                 });
             }
         });
 
+        // تضمين أي موظف تم تسجيل مبيعات له في هذا الشهر المحدد
+        const start = new Date(year, month, 1).getTime();
+        const end = new Date(year, month + 1, 0, 23, 59, 59).getTime();
+        sales.forEach(s => {
+            const t = s.timestamp || new Date(s.date).getTime();
+            if (t >= start && t <= end && s.employeeName && typeof s.employeeName === 'string' && s.employeeName.trim().length > 0) {
+                const name = s.employeeName.trim();
+                if (!candidates.has(name)) {
+                    candidates.set(name, {
+                        userId: s.username || name,
+                        employeeName: name,
+                        market: s.market || 'غير محدد'
+                    });
+                }
+            }
+        });
+
         if (mKey === "2026-06") {
             targetNames.forEach(empName => {
-                if (!candidates.has(empName)) {
-                    const u = usersList.find(usr => usr.name === empName);
-                    const t = targetsList.find(tg => tg.employeeName === empName);
+                if (empName && typeof empName === 'string' && empName.trim().length > 0 && !candidates.has(empName.trim())) {
+                    const name = empName.trim();
+                    const u = usersList.find(usr => usr.name === name);
+                    const t = targetsList.find(tg => tg.employeeName === name);
                     let market = t ? t.market : '';
                     if (!market) {
-                        const foundSale = sales.find(s => s.employeeName === empName);
+                        const foundSale = sales.find(s => s.employeeName === name);
                         market = foundSale ? foundSale.market : 'غير محدد';
                     }
-                    candidates.set(empName, {
-                        userId: u?.key || empName,
-                        employeeName: empName,
+                    candidates.set(name, {
+                        userId: u?.key || name,
+                        employeeName: name,
                         market: market || 'غير محدد'
                     });
                 }
@@ -911,31 +1013,34 @@ const normalizeName = (name: string) => {
         }
 
         const resultList = Array.from(candidates.values()).map(c => {
-            const historical = archiveData.find(a => a.userId === c.userId && a.month === mKey);
+            if (!c.employeeName || typeof c.employeeName !== 'string' || !c.employeeName.trim()) {
+                return null;
+            }
+
+            const historical = archiveData.find(a => (a.userId === c.userId || a.employeeName?.trim() === c.employeeName.trim()) && a.month === mKey);
             
             let targetAmount = 0;
             if (historical) {
                 if ((historical as any).isDeleted) return null;
-                targetAmount = historical.targetAmount;
+                targetAmount = Number(historical.targetAmount) || 0;
             } else {
-                const t = targetsList.find(x => x.employeeName === c.employeeName);
-                targetAmount = t ? t.finalTarget : 0;
+                const t = targetsList.find(x => x.employeeName?.trim() === c.employeeName.trim() || x.userId === c.userId);
+                targetAmount = t ? (Number(t.finalTarget) || 0) : 0;
             }
 
             let achievedAmount = computeAchieved(c.employeeName, year, month, c.userId);
-            const start = new Date(year, month, 1).getTime();
-            const end = new Date(year, month + 1, 0, 23, 59, 59).getTime();
             const employeeSales = sales.filter(s => {
                 const nameMatches = s.employeeName?.trim().toLowerCase() === c.employeeName?.trim().toLowerCase();
                 const userMatches = c.userId && s.username && (s.username.replace(/[.#$/\[\]]/g, "_") === c.userId || s.username === c.userId);
-                return (nameMatches || userMatches) && s.timestamp >= start && s.timestamp <= end;
+                const t = s.timestamp || new Date(s.date).getTime();
+                return (nameMatches || userMatches) && t >= start && t <= end;
             });
-            const activeMarkets = Array.from(new Set(employeeSales.map(s => s.market))).sort().join('، ');
+            const activeMarkets = Array.from(new Set(employeeSales.map(s => s.market).filter(Boolean))).sort().join('، ');
             if (mKey === "2026-06" && targetNames.includes(c.employeeName)) {
                 achievedAmount = computeAchieved(c.employeeName, 2026, 5, c.userId); // June
             }
 
-            if (targetAmount === 0 && achievedAmount === 0) return null;
+            if (targetAmount <= 0 && achievedAmount <= 0) return null;
 
             return {
                 userId: c.userId,
@@ -947,17 +1052,78 @@ const normalizeName = (name: string) => {
             };
         }).filter(Boolean) as { userId: string; employeeName: string; market: string; targetAmount: number; achievedAmount: number; activeMarkets?: string; }[];
 
-        return resultList;
+        return resultList.filter(item => item && item.employeeName && item.employeeName.trim().length > 0 && (Number(item.targetAmount) > 0 || Number(item.achievedAmount) > 0));
+    };
+
+    const getDropdownEmployees = () => {
+        if (selectedTargetMonth === 'current') {
+            const now = new Date();
+            const curY = now.getFullYear();
+            const curM = now.getMonth();
+            const map = new Map<string, string>();
+
+            targetsList.forEach(t => {
+                if (t.employeeName && typeof t.employeeName === 'string' && t.employeeName.trim().length > 0) {
+                    const name = t.employeeName.trim();
+                    const val = t.userId || name;
+                    map.set(val, name);
+                }
+            });
+
+            usersList.forEach(u => {
+                if (u.name && typeof u.name === 'string' && u.name.trim().length > 0) {
+                    const name = u.name.trim();
+                    const val = u.key || name;
+                    const ach = computeAchieved(name, curY, curM, u.key);
+                    if (ach > 0) {
+                        map.set(val, name);
+                    }
+                }
+            });
+
+            return Array.from(map.entries()).map(([key, name]) => ({ key, name })).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+        } else {
+            const pastData = getPastMonthTargetsData(selectedTargetMonth);
+            const [yStr, mStr] = selectedTargetMonth.split('-');
+            const y = parseInt(yStr, 10);
+            const mIdx = parseInt(mStr, 10) - 1;
+            const map = new Map<string, string>();
+
+            pastData.forEach(p => {
+                if (p.employeeName && typeof p.employeeName === 'string' && p.employeeName.trim().length > 0) {
+                    const name = p.employeeName.trim();
+                    const val = p.userId || name;
+                    map.set(val, name);
+                }
+            });
+
+            const start = new Date(y, mIdx, 1).getTime();
+            const end = new Date(y, mIdx + 1, 0, 23, 59, 59).getTime();
+            sales.forEach(s => {
+                const t = s.timestamp || new Date(s.date).getTime();
+                if (t >= start && t <= end && s.employeeName && typeof s.employeeName === 'string' && s.employeeName.trim().length > 0) {
+                    const name = s.employeeName.trim();
+                    const val = s.username || name;
+                    map.set(val, name);
+                }
+            });
+
+            return Array.from(map.entries()).map(([key, name]) => ({ key, name })).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+        }
     };
 
     const renderPastMonthTargetsList = (mKey: string) => {
         let dataList = getPastMonthTargetsData(mKey);
         if (targetPrintEmployee) {
-            dataList = dataList.filter(t => t.userId === targetPrintEmployee);
+            dataList = dataList.filter(t => 
+                t.userId === targetPrintEmployee || 
+                t.employeeName === targetPrintEmployee || 
+                (t.employeeName && targetPrintEmployee && t.employeeName.trim().toLowerCase() === targetPrintEmployee.trim().toLowerCase())
+            );
         }
 
-        const totalTarget = dataList.reduce((sum, item) => sum + item.targetAmount, 0);
-        const totalAchieved = dataList.reduce((sum, item) => sum + item.achievedAmount, 0);
+        const totalTarget = dataList.reduce((sum, item) => sum + (Number(item.targetAmount) || 0), 0);
+        const totalAchieved = dataList.reduce((sum, item) => sum + (Number(item.achievedAmount) || 0), 0);
         const totalPerc = totalTarget > 0 ? ((totalAchieved / totalTarget) * 100).toFixed(1) : "0.0";
 
         return (
@@ -1007,18 +1173,18 @@ const normalizeName = (name: string) => {
                             <div className="font-bold text-white text-lg">{targetPrintEmployee ? "الإجمالي المحقق" : "الإجمالي لجميع الحسابات"}</div>
                             <div className="flex items-center gap-2">
                                 <div className="text-left flex flex-col pl-3 border-l border-white/20">
-                                    <span className="text-xs opacity-70 text-white">متوسط النسبة</span>
+                                    <span className="text-xs opacity-70 text-white">نسبة المحقق</span>
                                     <span className="font-black text-orange-400">{totalPerc}%</span>
                                 </div>
                             </div>
                         </div>
                         <div className="mt-3 flex justify-between items-center bg-black/40 p-3 rounded-xl">
                             <div className="flex flex-col">
-                                <span className="text-[10px] opacity-70 text-white uppercase font-black">إجمالي التارجت</span>
+                                <span className="text-[10px] opacity-70 text-white uppercase font-black">إجمالي التارجت للشهر المختار</span>
                                 <span className="font-black text-yellow-400">{(Number(totalTarget) || 0).toLocaleString()} ج.م</span>
                             </div>
                             <div className="flex flex-col text-left">
-                                <span className="text-[10px] opacity-70 text-white uppercase font-black">إجمالي المحقق</span>
+                                <span className="text-[10px] opacity-70 text-white uppercase font-black">إجمالي المحقق من الموظفين</span>
                                 <span className="font-black text-green-400">{(Number(totalAchieved) || 0).toLocaleString()} ج.م</span>
                             </div>
                         </div>
@@ -1394,33 +1560,111 @@ const normalizeName = (name: string) => {
                         {(showCommentInput[sale.id] || ((Array.isArray(sale.comments) ? sale.comments : (sale.comments ? Object.values(sale.comments) : [])).length > 0)) && (
                             <div className="mt-4 pt-4 border-t border-white/10">
                                 <div className="space-y-3 mb-4">
-                                    {(Array.isArray(sale.comments) ? sale.comments : (sale.comments ? Object.values(sale.comments) : [])).map((comment, cIdx) => (
-                                        <div key={comment.id || `comment-${sale.id}-${cIdx}`} className="bg-white/5 rounded-xl p-3 flex justify-between items-start">
-                                            <div>
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <span className="text-xs font-bold text-blue-300">{comment.senderName}</span>
-                                                    <span className="text-[9px] opacity-50">{comment.timestamp ? new Date(comment.timestamp).toLocaleString('ar-EG') : ''}</span>
+                                    {(Array.isArray(sale.comments) ? sale.comments : (sale.comments ? Object.values(sale.comments) : [])).map((comment, cIdx) => {
+                                        const cKey = comment.id || `comment-${sale.id}-${cIdx}`;
+                                        const isEditingThis = editingCommentId[sale.id] === cKey;
+
+                                        return (
+                                            <div key={cKey} className="bg-white/5 rounded-xl p-3 flex flex-col gap-2 border border-white/5 hover:border-white/10 transition">
+                                                <div className="flex justify-between items-start">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs font-bold text-blue-300 bg-blue-500/10 px-2 py-0.5 rounded-md border border-blue-500/20">
+                                                            {comment.senderName}
+                                                        </span>
+                                                        <span className="text-[9px] opacity-50 text-gray-300">
+                                                            {comment.timestamp ? new Date(comment.timestamp).toLocaleString('ar-EG') : ''}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1">
+                                                        <button 
+                                                            title="إعجاب" 
+                                                            onClick={() => handleLikeComment(sale.id, comment.id || `${cIdx}`)} 
+                                                            className={`p-1.5 rounded-lg ${comment.isLiked ? 'text-red-500 bg-red-500/10' : 'text-white/40 hover:text-white/80 hover:bg-white/10'} transition`}
+                                                        >
+                                                            <Heart size={14} fill={comment.isLiked ? 'currentColor' : 'none'} />
+                                                        </button>
+                                                        <button 
+                                                            title="تعديل التعليق" 
+                                                            onClick={() => {
+                                                                setEditingCommentId(prev => ({ ...prev, [sale.id]: isEditingThis ? null : cKey }));
+                                                                setEditingCommentText(prev => ({ ...prev, [cKey]: comment.text }));
+                                                            }} 
+                                                            className={`p-1.5 rounded-lg transition ${isEditingThis ? 'text-indigo-400 bg-indigo-500/20' : 'text-white/40 hover:text-indigo-400 hover:bg-indigo-500/10'}`}
+                                                        >
+                                                            <Edit size={14} />
+                                                        </button>
+                                                        <button 
+                                                            title="حذف التعليق" 
+                                                            onClick={() => handleDeleteComment(sale.id, comment.id || `${cIdx}`)} 
+                                                            className="p-1.5 rounded-lg text-white/40 hover:text-red-400 hover:bg-red-500/10 transition"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                <p className="text-xs text-white/90 whitespace-pre-wrap">{comment.text}</p>
+
+                                                {isEditingThis ? (
+                                                    <div className="mt-1 space-y-2">
+                                                        <textarea 
+                                                            value={editingCommentText[cKey] ?? comment.text}
+                                                            onChange={e => setEditingCommentText(prev => ({ ...prev, [cKey]: e.target.value.substring(0, 1000) }))}
+                                                            className="w-full bg-black/40 border border-indigo-500/40 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-indigo-400 min-h-[50px] max-h-[100px]"
+                                                            maxLength={1000}
+                                                        />
+                                                        <div className="flex justify-end gap-2">
+                                                            <button 
+                                                                onClick={() => setEditingCommentId(prev => ({ ...prev, [sale.id]: null }))}
+                                                                className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition"
+                                                            >
+                                                                إلغاء
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleSaveEditedComment(sale.id, comment.id || `${cIdx}`)}
+                                                                className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-indigo-600/30"
+                                                            >
+                                                                <Save size={13} /> حفظ التعديل
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-xs text-white/90 whitespace-pre-wrap">{comment.text}</p>
+                                                )}
                                             </div>
-                                            <button onClick={() => handleLikeComment(sale.id, comment.id || `${cIdx}`)} className={`p-1.5 rounded-full ${comment.isLiked ? 'text-red-500 bg-red-500/10' : 'text-white/40 hover:text-white/80 hover:bg-white/10'} transition`}>
-                                                <Heart size={14} fill={comment.isLiked ? 'currentColor' : 'none'} />
+                                        );
+                                    })}
+                                </div>
+
+                                {showCommentInput[sale.id] && (
+                                    <div className="space-y-2 bg-black/25 p-3 rounded-2xl border border-white/5">
+                                        <div className="flex items-center justify-between gap-2 pb-1 border-b border-white/5">
+                                            <label className="text-[11px] font-bold text-blue-300 flex items-center gap-1.5">
+                                                <UserIcon size={14} className="text-blue-400" />
+                                                <span>التعليق باسم (المسؤول):</span>
+                                            </label>
+                                            <select 
+                                                value={commentSender[sale.id] || (user.username === 'admin' ? 'Mr. Amir' : (adminCommenters[0]?.name || 'Mr. Amir'))}
+                                                onChange={e => setCommentSender(prev => ({ ...prev, [sale.id]: e.target.value }))}
+                                                className="bg-gray-800 border border-blue-500/30 text-blue-200 text-xs rounded-xl px-3 py-1.5 font-bold focus:outline-none focus:border-blue-400 cursor-pointer shadow-inner"
+                                            >
+                                                {adminCommenters.map(adm => (
+                                                    <option key={adm.id} value={adm.name} className="bg-gray-900 text-white font-bold">
+                                                        {adm.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <textarea 
+                                                value={commentText[sale.id] || ''}
+                                                onChange={e => setCommentText(prev => ({ ...prev, [sale.id]: e.target.value.substring(0, 1000) }))}
+                                                placeholder="أضف تعليقاً..."
+                                                className="w-full bg-black/30 border border-white/10 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 min-h-[40px] max-h-[80px]"
+                                                maxLength={1000}
+                                            />
+                                            <button onClick={() => handleAddComment(sale.id)} disabled={!commentText[sale.id]?.trim()} className="bg-blue-600 text-white p-2.5 rounded-xl flex items-center justify-center disabled:opacity-50 hover:bg-blue-700 transition">
+                                                <Send size={16} />
                                             </button>
                                         </div>
-                                    ))}
-                                </div>
-                                {showCommentInput[sale.id] && (
-                                    <div className="flex gap-2">
-                                        <textarea 
-                                            value={commentText[sale.id] || ''}
-                                            onChange={e => setCommentText(prev => ({ ...prev, [sale.id]: e.target.value.substring(0, 1000) }))}
-                                            placeholder="أضف تعليقاً..."
-                                            className="w-full bg-black/30 border border-white/10 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 min-h-[40px] max-h-[80px]"
-                                            maxLength={1000}
-                                        />
-                                        <button onClick={() => handleAddComment(sale.id)} disabled={!commentText[sale.id]?.trim()} className="bg-blue-600 text-white p-2.5 rounded-xl flex items-center justify-center disabled:opacity-50 hover:bg-blue-700 transition">
-                                            <Send size={16} />
-                                        </button>
                                     </div>
                                 )}
                             </div>
@@ -1861,16 +2105,9 @@ const normalizeName = (name: string) => {
                                     onChange={e => setTargetPrintEmployee(e.target.value)}
                                 >
                                     <option value="">الكل</option>
-                                    {usersList.filter(u => {
-                                        if (selectedTargetMonth === 'current') {
-                                            const now = new Date();
-                                            const achieved = computeAchieved(u.name, now.getFullYear(), now.getMonth(), u.key);
-                                            return achieved > 0;
-                                        } else {
-                                            const h = archiveData.find(x => x.month === selectedTargetMonth && (x.userId === u.key || x.employeeName === u.name));
-                                            return h && h.achievedAmount > 0;
-                                        }
-                                    }).map(u => <option key={u.key} value={u.key}>{u.name}</option>)}
+                                    {getDropdownEmployees().map(emp => (
+                                        <option key={emp.key} value={emp.key}>{emp.name}</option>
+                                    ))}
                                 </select>
                             </div>
                             <button 
@@ -1919,7 +2156,7 @@ const normalizeName = (name: string) => {
                                 const year = parseInt(yStr);
                                 const month = parseInt(mStr) - 1;
                                 
-                                const monthTargets = targetsList.map((t, tIdx) => {
+                                const monthTargets = targetsList.filter(t => t.employeeName && typeof t.employeeName === 'string' && t.employeeName.trim().length > 0).map((t, tIdx) => {
                                     const achieved = computeAchieved(t.employeeName, year, month, t.userId);
                                     let pastTarget = t.finalTarget;
                                     // Try to fetch historical target if available
