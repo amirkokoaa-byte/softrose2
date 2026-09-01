@@ -551,14 +551,76 @@ const normalizeName = (name: string) => {
     const handleEditCurrentTarget = async (userId: string, currentVal: number) => {
         const newVal = prompt("أدخل التارجت الشهري الجديد:", currentVal.toString());
         if (newVal !== null && !isNaN(Number(newVal)) && Number(newVal) > 0) {
-            await update(ref(db, `targets/${userId}`), { finalTarget: Number(newVal) });
-            alert("تم التعديل بنجاح");
+            const numVal = Number(newVal);
+            const now = new Date();
+            const currentMonth = `${now.getFullYear()}-${now.getMonth() + 1}`;
+            const currentMonthFormatted = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            const targetObj = targetsList.find(t => t.userId === userId);
+
+            // حفظ تارجت الأشهر السابقة في سجل الأرشيف لضمان عدم المساس بها عند تغيير تارجت الشهر الحالي
+            if (targetObj) {
+                for (const mKey of pastMonthsList) {
+                    const [yStr, mStr] = mKey.split('-');
+                    const y = parseInt(yStr, 10);
+                    const mIdx = parseInt(mStr, 10) - 1;
+                    const prevAchieved = computeAchieved(targetObj.employeeName, y, mIdx, userId);
+                    
+                    const existingHist = archiveData.find(a => (a.userId === userId || a.employeeName === targetObj.employeeName) && a.month === mKey);
+                    if (!existingHist) {
+                        await push(ref(db, `target_history/${userId}`), {
+                            userId: userId,
+                            employeeName: targetObj.employeeName,
+                            month: mKey,
+                            targetAmount: targetObj.finalTarget || 0,
+                            achievedAmount: prevAchieved
+                        });
+                    }
+                }
+            }
+
+            // تحديث التارجت للشهر الحالي فقط
+            await update(ref(db, `targets/${userId}`), { 
+                finalTarget: numVal,
+                lastResetMonth: currentMonth
+            });
+
+            // حفظ نسخة الشهر الحالي في الأرشيف
+            const currentAchieved = targetObj ? computeAchieved(targetObj.employeeName, now.getFullYear(), now.getMonth(), userId) : 0;
+            const currentHist = archiveData.find(a => (a.userId === userId || a.employeeName === targetObj?.employeeName) && a.month === currentMonthFormatted);
+            if (currentHist && currentHist.id) {
+                await update(ref(db, `target_history/${userId}/${currentHist.id}`), {
+                    targetAmount: numVal,
+                    achievedAmount: currentAchieved
+                });
+            } else if (targetObj) {
+                await push(ref(db, `target_history/${userId}`), {
+                    userId: userId,
+                    employeeName: targetObj.employeeName,
+                    month: currentMonthFormatted,
+                    targetAmount: numVal,
+                    achievedAmount: currentAchieved
+                });
+            }
+
+            const employee = usersList.find(u => u.key === userId) || (targetObj ? { name: targetObj.employeeName, username: userId } : null);
+            if (employee) {
+                push(ref(db, `notifications/${userId}`), {
+                    message: `تم تعديل تارجت شهر ${currentMonth} إلى ${numVal.toLocaleString()} ج.م`,
+                    sender: user.name,
+                    timestamp: Date.now(),
+                    isRead: false
+                });
+            }
+
+            alert("تم تعديل التارجت للشهر الحالي بنجاح فقط دون المساس بالأشهر السابقة");
         }
     };
 
     const handleDeleteCurrentTarget = async (userId: string) => {
         if (confirm("هل أنت متأكد من حذف هذا التارجت؟")) {
-            await remove(ref(db, `targets/${userId}`));
+            if (userId) {
+                await remove(ref(db, `targets/${userId}`));
+            }
             alert("تم الحذف بنجاح");
         }
     };
@@ -704,13 +766,21 @@ const normalizeName = (name: string) => {
             return { ...t, achieved, activeMarkets };
         });
 
-        let finalTargets = targetsWithAchieved;
+        // استبعاد أي خانة ليس بها اسم موظف أو لا تحتوي على تارجت أو بيانات محققة
+        let finalTargets = targetsWithAchieved.filter(t => {
+            const hasName = t.employeeName && typeof t.employeeName === 'string' && t.employeeName.trim().length > 0;
+            const targetVal = Number(t.finalTarget) || 0;
+            const achievedVal = Number(t.achieved) || 0;
+            const suggestedVal = Number(t.suggestedAmount) || 0;
+            return hasName && (targetVal > 0 || achievedVal > 0 || suggestedVal > 0);
+        });
+
         if (targetPrintEmployee) {
-            finalTargets = finalTargets.filter(t => t.userId === targetPrintEmployee);
+            finalTargets = finalTargets.filter(t => t.userId === targetPrintEmployee || t.employeeName === targetPrintEmployee);
         }
-        const totalTarget = finalTargets.reduce((sum, t) => sum + t.finalTarget, 0);
-        const totalAchieved = finalTargets.reduce((sum, t) => sum + t.achieved, 0);
-        const totalPerc = totalTarget > 0 ? ((totalAchieved / totalTarget) * 100).toFixed(1) : 0;
+        const totalTarget = finalTargets.reduce((sum, t) => sum + (Number(t.finalTarget) || 0), 0);
+        const totalAchieved = finalTargets.reduce((sum, t) => sum + (Number(t.achieved) || 0), 0);
+        const totalPerc = totalTarget > 0 ? ((totalAchieved / totalTarget) * 100).toFixed(1) : "0.0";
 
         return (
             <>
