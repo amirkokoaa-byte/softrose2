@@ -6,7 +6,7 @@ import { ref, onValue, remove, update, push } from "firebase/database";
 import { User, CompetitorPrice } from '../types';
 import { exportToCSV, exportToExcel } from '../utils';
 import { COMPANIES, FINE_FACIAL, FINE_KITCHEN, FINE_TOILET, ZEINA_FACIAL, ZEINA_KITCHEN, ZEINA_TOILET, PAPIA_FACIAL, PAPIA_KITCHEN, PAPIA_TOILET, WHITE_FACIAL, WHITE_KITCHEN, WHITE_TOILET } from '../constants';
-import { Trash2, Edit, Save, X, FileSpreadsheet, User as UserIcon, Calendar, Building, Scale, Search, Filter, Plus, Receipt, Printer, Clock } from 'lucide-react';
+import { Trash2, Edit, Save, X, FileSpreadsheet, User as UserIcon, Calendar, Building, Scale, Search, Filter, Plus, Receipt, Printer, Clock, ChevronDown, ChevronUp, Check, Store } from 'lucide-react';
 
 interface Props {
     user: User;
@@ -35,6 +35,16 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme, products = [
     const [showSalesPricesModal, setShowSalesPricesModal] = useState(false);
     const [salesPriceBranch, setSalesPriceBranch] = useState('');
     const [salesPricePeriod, setSalesPricePeriod] = useState('week');
+
+    // التحكم في عرض التواريخ (آخر 7 تواريخ + زر المزيد) والقوائم المنسدلة لكل تاريخ وتعديل الصنف/السعر
+    const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
+    const [visibleDatesCount, setVisibleDatesCount] = useState<number>(7);
+    const [editingSingleItem, setEditingSingleItem] = useState<{
+        recordId: string;
+        itemIdx: number;
+        name: string;
+        price: string;
+    } | null>(null);
 
     useEffect(() => {
         const unsubProducts = onCachedValue(ref(db, 'settings/competitor_products'), 'settings_competitor_products', snap => {
@@ -200,6 +210,91 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme, products = [
         (!selectedMarket || d.market === selectedMarket) &&
         (!selectedCompany || d.company === selectedCompany)
     ).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    // تجميع التقارير حسب التاريخ (من الأحدث للأقدم) مع استخراج السلاسل وأسماء الحسابات لكل يوم
+    const groupedByDate = useMemo(() => {
+        const toLatinDigits = (str: string) =>
+            str.replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+
+        const getDayKeyAndDisplay = (rec: CompetitorPrice) => {
+            if (rec.timestamp && !isNaN(Number(rec.timestamp)) && Number(rec.timestamp) > 0) {
+                const dt = new Date(Number(rec.timestamp));
+                const y = dt.getFullYear();
+                const m = String(dt.getMonth() + 1).padStart(2, '0');
+                const day = String(dt.getDate()).padStart(2, '0');
+                const key = `${y}-${m}-${day}`;
+                const display = rec.date && rec.date.trim() ? rec.date.trim() : `${Number(day)}/${Number(m)}/${y}`;
+                const dayName = dt.toLocaleDateString('ar-EG', { weekday: 'long' });
+                return { key, display, dayName, ts: Number(rec.timestamp) };
+            }
+            const rawDate = (rec.date || '').trim();
+            const normalized = toLatinDigits(rawDate).replace(/[^\d/\-]/g, '');
+            return {
+                key: normalized || rawDate || 'unknown',
+                display: rawDate || 'بدون تاريخ',
+                dayName: '',
+                ts: 0
+            };
+        };
+
+        const groupsMap = new Map<string, {
+            dateKey: string;
+            displayDate: string;
+            dayName: string;
+            maxTimestamp: number;
+            marketsSet: Set<string>;
+            accountsSet: Set<string>;
+            records: CompetitorPrice[];
+        }>();
+
+        filtered.forEach(rec => {
+            const { key, display, dayName, ts } = getDayKeyAndDisplay(rec);
+            if (!groupsMap.has(key)) {
+                groupsMap.set(key, {
+                    dateKey: key,
+                    displayDate: display,
+                    dayName,
+                    maxTimestamp: ts,
+                    marketsSet: new Set<string>(),
+                    accountsSet: new Set<string>(),
+                    records: []
+                });
+            }
+            const grp = groupsMap.get(key)!;
+            if (ts > grp.maxTimestamp) grp.maxTimestamp = ts;
+            if (!grp.dayName && dayName) grp.dayName = dayName;
+            if (rec.market && rec.market.trim()) grp.marketsSet.add(rec.market.trim());
+            if (rec.employeeName && rec.employeeName.trim()) {
+                grp.accountsSet.add(rec.employeeName.trim());
+            } else {
+                grp.accountsSet.add('غير معروف');
+            }
+            grp.records.push(rec);
+        });
+
+        return Array.from(groupsMap.values())
+            .sort((a, b) => (b.maxTimestamp || 0) - (a.maxTimestamp || 0))
+            .map(g => ({
+                dateKey: g.dateKey,
+                displayDate: g.displayDate,
+                dayName: g.dayName,
+                maxTimestamp: g.maxTimestamp,
+                markets: Array.from(g.marketsSet),
+                accounts: Array.from(g.accountsSet),
+                records: g.records
+            }));
+    }, [filtered]);
+
+    const visibleDateGroups = useMemo(() => {
+        return groupedByDate.slice(0, visibleDatesCount);
+    }, [groupedByDate, visibleDatesCount]);
+
+    const toggleDateDropdown = (dateKey: string) => {
+        setExpandedDates(prev => ({
+            ...prev,
+            [dateKey]: !prev[dateKey]
+        }));
+    };
 
     // منطق مقارنة الأسعار: استخراج أحدث سعر لكل منتج في كل ماركت
     const comparisonResults = useMemo(() => {
@@ -449,14 +544,39 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme, products = [
         setEditingReport({ ...editingReport, items: newItems });
     };
 
-    const handleInlineEdit = async (record: CompetitorPrice, itemIdx: number) => {
-        const newPrice = prompt("أدخل السعر الجديد:", record.items[itemIdx].price.toString());
-        if (newPrice !== null && !isNaN(Number(newPrice)) && Number(newPrice) > 0) {
-            const newItems = [...record.items];
-            newItems[itemIdx].price = Number(newPrice);
-            setData(prev => prev.map(d => d.id === record.id ? { ...d, items: newItems } : d));
-            await update(ref(db, `competitor_prices/${record.id}`), { items: newItems });
+    const handleInlineEdit = (record: CompetitorPrice, itemIdx: number) => {
+        if (!record.id) return;
+        const targetItem = record.items[itemIdx];
+        if (!targetItem) return;
+        setEditingSingleItem({
+            recordId: record.id,
+            itemIdx,
+            name: targetItem.name || '',
+            price: String(targetItem.price ?? '')
+        });
+    };
+
+    const handleSaveSingleItemEdit = async (record: CompetitorPrice, itemIdx: number) => {
+        if (!editingSingleItem || !record.id) return;
+        const trimmedName = editingSingleItem.name.trim();
+        const parsedPrice = Number(editingSingleItem.price);
+        if (!trimmedName) {
+            alert("يرجى إدخال مسمى الصنف");
+            return;
         }
+        if (isNaN(parsedPrice) || parsedPrice < 0) {
+            alert("يرجى إدخال سعر صحيح");
+            return;
+        }
+        const newItems = [...(record.items || [])];
+        newItems[itemIdx] = {
+            ...newItems[itemIdx],
+            name: trimmedName,
+            price: parsedPrice
+        };
+        setData(prev => prev.map(d => d.id === record.id ? { ...d, items: newItems } : d));
+        setEditingSingleItem(null);
+        await update(ref(db, `competitor_prices/${record.id}`), { items: newItems });
     };
 
     const handleInlineDelete = async (record: CompetitorPrice, itemIdx: number) => {
@@ -678,54 +798,242 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme, products = [
                 </button>
             </div>
 
-            <div className="space-y-4">
-                {filtered.map((record) => (
-                    <div key={record.id} className="p-5 rounded-2xl border bg-gray-800 border-white/10 text-white shadow-lg">
-                        <div className="flex justify-between items-start mb-4 border-b border-white/5 pb-3">
-                            <div>
-                                <h3 className="text-lg font-bold text-blue-400">{record.market}</h3>
-                                <div className="flex flex-wrap gap-3 mt-1 text-[10px] opacity-70 text-white">
-                                    <span className="flex items-center gap-1 font-bold"><Calendar size={12}/> {record.date}</span>
-                                    <span className="flex items-center gap-1 font-bold"><UserIcon size={12}/> {record.employeeName}</span>
-                                    <span className="font-black text-green-400">{record.company}</span>
-                                </div>
-                            </div>
-                            <div className="flex gap-1">
-                                {user.role === 'admin' && (
-                                    <>
-                                        <button onClick={() => setEditingReport(record)} className="p-2 text-indigo-400 hover:bg-indigo-500/20 rounded-lg transition"><Edit size={16}/></button>
-                                        <button onClick={() => {
-                                            if(confirm('هل أنت متأكد من حذف هذا التقرير؟')) {
-                                                setData(prev => prev.filter(d => d.id !== record.id));
-                                                remove(ref(db, `competitor_prices/${record.id!}`));
-                                            }
-                                        }} className="p-2 text-red-400 hover:bg-red-500/20 rounded-lg transition"><Trash2 size={16}/></button>
-                                    </>
+            {/* قائمة التواريخ أسفل بعض بعرض الشاشة (آخر 7 تواريخ + زر المزيد) */}
+            <div className="space-y-3 w-full">
+                {visibleDateGroups.length === 0 ? (
+                    <div className="p-8 rounded-2xl border bg-gray-800/80 border-white/10 text-center text-white/60 font-bold">
+                        لا توجد تقارير أسعار مسجلة مطابقة للبحث
+                    </div>
+                ) : (
+                    visibleDateGroups.map((group) => {
+                        const isExpanded = Boolean(expandedDates[group.dateKey]);
+                        return (
+                            <div
+                                key={group.dateKey}
+                                className="w-full rounded-2xl border bg-gray-800 border-white/10 text-white shadow-lg overflow-hidden transition-all"
+                            >
+                                {/* شريط التاريخ بعرض الشاشة وبجانبه السلاسل وأسماء الحسابات */}
+                                <button
+                                    type="button"
+                                    onClick={() => toggleDateDropdown(group.dateKey)}
+                                    className="w-full p-4 sm:p-5 text-right flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-white/5 transition cursor-pointer"
+                                >
+                                    <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-2 sm:gap-4 w-full min-w-0">
+                                        {/* التاريخ */}
+                                        <div className="flex items-center gap-2 bg-blue-600/20 border border-blue-500/30 px-3.5 py-2 rounded-xl shrink-0">
+                                            <Calendar size={18} className="text-blue-400 shrink-0" />
+                                            <div className="flex items-center gap-1.5 font-black text-sm sm:text-base text-white">
+                                                {group.dayName && <span className="text-blue-300">{group.dayName}</span>}
+                                                <span className="font-mono">{group.displayDate}</span>
+                                            </div>
+                                        </div>
+
+                                        {/* السلاسل التي تم تسجيل أسعار بها في ذلك اليوم */}
+                                        <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                                            <span className="text-[11px] sm:text-xs font-black text-emerald-400 flex items-center gap-1 shrink-0">
+                                                <Store size={14} className="shrink-0" />
+                                                السلاسل:
+                                            </span>
+                                            {group.markets.map((m, idx) => (
+                                                <span
+                                                    key={idx}
+                                                    className="text-[11px] sm:text-xs font-bold bg-emerald-500/15 text-emerald-200 border border-emerald-500/30 px-2.5 py-1 rounded-lg"
+                                                >
+                                                    {m}
+                                                </span>
+                                            ))}
+                                        </div>
+
+                                        {/* أسماء الحسابات التي قامت بتسجيل أسعار في ذلك اليوم */}
+                                        <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                                            <span className="text-[11px] sm:text-xs font-black text-purple-400 flex items-center gap-1 shrink-0">
+                                                <UserIcon size={14} className="shrink-0" />
+                                                الحسابات:
+                                            </span>
+                                            {group.accounts.map((accName, idx) => (
+                                                <span
+                                                    key={idx}
+                                                    className="text-[11px] sm:text-xs font-bold bg-purple-500/15 text-purple-200 border border-purple-500/30 px-2.5 py-1 rounded-lg"
+                                                >
+                                                    {accName}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* مؤشر القائمة المنسدلة */}
+                                    <div className="flex items-center justify-end gap-2 shrink-0 self-end lg:self-center">
+                                        <span className="text-[11px] font-bold text-gray-300 bg-white/10 px-2.5 py-1 rounded-lg whitespace-nowrap">
+                                            {group.records.length} {group.records.length === 1 ? 'تقرير' : 'تقارير'}
+                                        </span>
+                                        <div className={`p-2 rounded-xl transition ${isExpanded ? 'bg-blue-600 text-white' : 'bg-white/10 text-gray-300'}`}>
+                                            {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                                        </div>
+                                    </div>
+                                </button>
+
+                                {/* القائمة المنسدلة عند الضغط على التاريخ وبها كل التفاصيل */}
+                                {isExpanded && (
+                                    <div className="border-t border-white/10 bg-gray-900/70 p-3 sm:p-5 space-y-4">
+                                        {group.records.map((record) => (
+                                            <div
+                                                key={record.id}
+                                                className="p-4 sm:p-5 rounded-2xl border bg-gray-800/90 border-white/10 text-white shadow-md space-y-3"
+                                            >
+                                                <div className="flex flex-wrap justify-between items-start gap-2 border-b border-white/10 pb-3">
+                                                    <div className="space-y-1.5">
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <span className="text-xs font-bold text-gray-400">اسم الفرع:</span>
+                                                            <h3 className="text-base sm:text-lg font-black text-blue-400">{record.market}</h3>
+                                                        </div>
+                                                        <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-white">
+                                                            <span className="flex items-center gap-1 bg-purple-500/15 border border-purple-500/30 text-purple-200 px-2.5 py-1 rounded-lg">
+                                                                <UserIcon size={13} className="text-purple-400" />
+                                                                <span>اسم الحساب: {record.employeeName || 'غير معروف'}</span>
+                                                            </span>
+                                                            <span className="flex items-center gap-1 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 px-2.5 py-1 rounded-lg font-black">
+                                                                <Building size={13} className="text-emerald-400" />
+                                                                <span>الشركة: {record.company}</span>
+                                                            </span>
+                                                            <span className="flex items-center gap-1 text-gray-300 bg-white/5 px-2.5 py-1 rounded-lg">
+                                                                <Calendar size={12} />
+                                                                <span>{record.date || group.displayDate}</span>
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-1.5">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setEditingReport(record)}
+                                                            className="px-3 py-1.5 text-xs font-bold text-indigo-300 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 rounded-xl transition flex items-center gap-1 cursor-pointer"
+                                                            title="تعديل جميع أصناف التقرير"
+                                                        >
+                                                            <Edit size={14} />
+                                                            <span>تعديل الكل</span>
+                                                        </button>
+                                                        {user.role === 'admin' && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    if (confirm('هل أنت متأكد من حذف هذا التقرير؟')) {
+                                                                        setData(prev => prev.filter(d => d.id !== record.id));
+                                                                        remove(ref(db, `competitor_prices/${record.id!}`));
+                                                                    }
+                                                                }}
+                                                                className="p-2 text-red-400 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-xl transition cursor-pointer"
+                                                                title="حذف التقرير"
+                                                            >
+                                                                <Trash2 size={15} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* قائمة الأصناف والأسعار مع زر تعديل في كل زر أسعار لتعديل مسمى الصنف أو السعر */}
+                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                                                    {(record.items || []).map((item, idx) => {
+                                                        const isEditingThisItem =
+                                                            editingSingleItem?.recordId === record.id &&
+                                                            editingSingleItem?.itemIdx === idx;
+
+                                                        return (
+                                                            <div
+                                                                key={idx}
+                                                                className="p-2.5 px-3 bg-black/40 rounded-xl text-xs border border-white/10 flex flex-col gap-2"
+                                                            >
+                                                                {isEditingThisItem ? (
+                                                                    <div className="space-y-2">
+                                                                        <div>
+                                                                            <label className="block text-[10px] text-gray-400 font-bold mb-0.5">مسمى الصنف</label>
+                                                                            <input
+                                                                                type="text"
+                                                                                value={editingSingleItem.name}
+                                                                                onChange={e => setEditingSingleItem(prev => prev ? { ...prev, name: e.target.value } : null)}
+                                                                                className="w-full p-2 rounded-lg bg-gray-800 text-white border border-blue-500/40 text-xs font-bold outline-none"
+                                                                                placeholder="مسمى الصنف"
+                                                                            />
+                                                                        </div>
+                                                                        <div>
+                                                                            <label className="block text-[10px] text-gray-400 font-bold mb-0.5">السعر (ج.م)</label>
+                                                                            <input
+                                                                                type="number"
+                                                                                value={editingSingleItem.price}
+                                                                                onChange={e => setEditingSingleItem(prev => prev ? { ...prev, price: e.target.value } : null)}
+                                                                                className="w-full p-2 rounded-lg bg-gray-800 text-white border border-blue-500/40 text-xs font-black text-center outline-none"
+                                                                                placeholder="السعر"
+                                                                            />
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1.5 pt-1">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleSaveSingleItemEdit(record, idx)}
+                                                                                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-1.5 px-2.5 rounded-lg font-bold flex items-center justify-center gap-1 transition cursor-pointer"
+                                                                            >
+                                                                                <Check size={13} /> حفظ
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => setEditingSingleItem(null)}
+                                                                                className="bg-gray-700 hover:bg-gray-600 text-white py-1.5 px-2.5 rounded-lg font-bold flex items-center justify-center gap-1 transition cursor-pointer"
+                                                                            >
+                                                                                <X size={13} /> إلغاء
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="flex justify-between items-center gap-2">
+                                                                        <span className="font-bold text-white break-words flex-1">{item.name}</span>
+                                                                        <div className="flex items-center gap-1.5 shrink-0">
+                                                                            <span className="font-black text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-1 rounded-lg whitespace-nowrap">
+                                                                                {item.price} ج.م
+                                                                            </span>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleInlineEdit(record, idx)}
+                                                                                className="px-2 py-1 text-[11px] font-bold text-blue-300 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                                                                                title="تعديل مسمى الصنف أو السعر"
+                                                                            >
+                                                                                <Edit size={12} />
+                                                                                <span>تعديل</span>
+                                                                            </button>
+                                                                            {user.role === 'admin' && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleInlineDelete(record, idx)}
+                                                                                    className="p-1 text-red-400 hover:bg-red-500/20 rounded-lg transition cursor-pointer"
+                                                                                    title="حذف الصنف"
+                                                                                >
+                                                                                    <Trash2 size={13} />
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 )}
                             </div>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                            {(record.items || []).map((item, idx) => (
-                                <div key={idx} className="flex justify-between items-center p-2 px-3 bg-black/30 rounded-xl text-xs border border-white/5 group">
-                                    <span className="opacity-80 truncate pr-2 font-bold text-white">{item.name}</span>
-                                    <div className="flex items-center gap-2">
-                                        <span className="font-black text-green-400">{item.price} ج.م</span>
-                                        {user.role === 'admin' && (
-                                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => handleInlineEdit(record, idx)} className="p-1 text-blue-400 hover:bg-blue-500/20 rounded-lg transition" title="تعديل السعر">
-                                                    <Edit size={14}/>
-                                                </button>
-                                                <button onClick={() => handleInlineDelete(record, idx)} className="p-1 text-red-400 hover:bg-red-500/20 rounded-lg transition" title="حذف الصنف">
-                                                    <Trash2 size={14}/>
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                ))}
+                        );
+                    })
+                )}
+
+                {/* زر المزيد لإظهار التواريخ السابقة بعد آخر 7 تواريخ */}
+                {groupedByDate.length > visibleDatesCount && (
+                    <button
+                        type="button"
+                        onClick={() => setVisibleDatesCount(prev => prev + 7)}
+                        className="w-full py-3.5 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-sm sm:text-base shadow-xl transition active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                        <ChevronDown size={20} />
+                        <span>المزيد ({groupedByDate.length - visibleDatesCount} تاريخ سابق)</span>
+                    </button>
+                )}
             </div>
 
             {/* مودال مقارنة الأسعار */}
