@@ -7,7 +7,7 @@ import { User, AppSettings, UserPermissions, AppNotification } from '../types';
 import { 
   Save, Trash2, UserPlus, Shield, Edit2, Plus, X, 
   Settings as SettingsIcon, Users, MapPin, Building2, 
-  ToggleLeft, ToggleRight, Key, Send
+  ToggleLeft, ToggleRight, Key, Send, Smartphone, Link as LinkIcon, Download
 } from 'lucide-react';
 
 interface Props {
@@ -59,7 +59,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
     }, [settings]);
 
     useEffect(() => {
-        if (user.role !== 'admin' && user.role !== 'manager') return;
+        if (user.role !== 'admin' && user.role !== 'manager' && !user.permissions?.showSettings) return;
 
         const unsubUsers = onCachedValue(ref(db, 'users'), 'users', snapshot => {
             if (snapshot.exists()) {
@@ -184,18 +184,25 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
     const handleUpdatePermissions = async () => {
         if (!permModal || !permModal.key) return;
         const permissions = permModal.permissions || {
-            showSalesLog: false,
-            showInventoryLog: false,
-            showInventoryReg: false,
-            showCompetitorReports: false,
             showDailySales: true,
-            showCompetitorPrices: true
+            showSalesLog: false,
+            showInventoryReg: false,
+            showInventoryLog: false,
+            showCompetitorPrices: true,
+            showCompetitorReports: false,
+            showProductsRegistry: true,
+            showCustomerFeedback: true,
+            showLeaveBalance: true,
+            showAttendance: true,
+            showBranchNumbers: true,
+            showEmployees: false,
+            showSettings: false
         };
         await update(ref(db, `users/${permModal.key}`), { 
             permissions: permissions,
             canViewAllSales: !!permModal.canViewAllSales
         });
-        alert("تم تحديث الصلاحيات بنجاح");
+        alert("تم تحديث وحفظ صلاحيات الموظف بنجاح");
         setPermModal(null);
     };
 
@@ -312,23 +319,75 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
         setNotifMsg('');
     };
 
-    const toggleUserPerm = (key: keyof UserPermissions) => {
-        if (!permModal) return;
-        const currentPermissions = permModal.permissions || {
-            showSalesLog: false,
-            showInventoryLog: false,
-            showInventoryReg: false,
-            showCompetitorReports: false,
+    const ALL_SIDE_TABS: { key: keyof UserPermissions; label: string }[] = [
+        { key: 'showDailySales', label: 'المبيعات اليومية' },
+        { key: 'showSalesLog', label: 'سجل المبيعات' },
+        { key: 'showInventoryReg', label: 'تسجيل المخزون' },
+        { key: 'showInventoryLog', label: 'سجل المخزون' },
+        { key: 'showCompetitorPrices', label: 'أسعار المنافسين' },
+        { key: 'showCompetitorReports', label: 'تقارير المنافسين' },
+        { key: 'showProductsRegistry', label: 'سجل المنتجات' },
+        { key: 'showCustomerFeedback', label: 'الشكاوي و المقترحات' },
+        { key: 'showLeaveBalance', label: 'رصيد الإجازات' },
+        { key: 'showAttendance', label: 'الحضور والانصراف' },
+        { key: 'showBranchNumbers', label: 'أرقام الفروع' },
+        { key: 'showEmployees', label: 'الموظفين' },
+        { key: 'showSettings', label: 'الإعدادات' },
+    ];
+
+    const toggleUserPerm = async (key: keyof UserPermissions) => {
+        if (!permModal || !permModal.key) return;
+        const currentPermissions: UserPermissions = {
             showDailySales: true,
-            showCompetitorPrices: true
+            showSalesLog: false,
+            showInventoryReg: false,
+            showInventoryLog: false,
+            showCompetitorPrices: true,
+            showCompetitorReports: false,
+            showProductsRegistry: true,
+            showCustomerFeedback: true,
+            showLeaveBalance: true,
+            showAttendance: true,
+            showBranchNumbers: true,
+            showEmployees: false,
+            showSettings: false,
+            ...(permModal.permissions || {})
+        };
+        const nextVal = !currentPermissions[key];
+        const updatedPermissions = {
+            ...currentPermissions,
+            [key]: nextVal
         };
         setPermModal({
             ...permModal,
-            permissions: {
-                ...currentPermissions,
-                [key]: !currentPermissions[key]
-            }
+            permissions: updatedPermissions
         });
+
+        // تحديث فوري ولحظي في قاعدة البيانات للموظف لكي تظهر له الخانة الجانبية فوراً
+        try {
+            await update(ref(db, `users/${permModal.key}/permissions`), {
+                [key]: nextVal
+            });
+        } catch (e) {
+            console.error("Error updating permission in real-time:", e);
+        }
+    };
+
+    const handleSetAllPerms = async (enable: boolean) => {
+        if (!permModal || !permModal.key) return;
+        const newPerms: any = {};
+        ALL_SIDE_TABS.forEach(t => {
+            newPerms[t.key] = enable;
+        });
+        setPermModal({
+            ...permModal,
+            permissions: newPerms
+        });
+        try {
+            await update(ref(db, `users/${permModal.key}/permissions`), newPerms);
+        } catch (e) {
+            console.error("Error setting all permissions:", e);
+        }
     };
 
     const getRoleLabel = (role: string) => {
@@ -343,7 +402,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
         }
     };
 
-    if (user.role !== 'admin' && user.role !== 'manager') {
+    if (user.role !== 'admin' && user.role !== 'manager' && !user.permissions?.showSettings) {
         return <div className="p-10 text-center opacity-50">عذراً، هذه الصفحة متاحة للمسؤولين فقط.</div>;
     }
 
@@ -386,6 +445,49 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 </div>
                 <button onClick={saveAppSettings} className="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg transition transform active:scale-95">
                     <Save size={20} /> حفظ الإعدادات العامة
+                </button>
+            </div>
+
+            {/* إعدادات التطبيق (روابط التحميل والتثبيت) */}
+            <div className={sectionClass}>
+                <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-cyan-400 border-b border-gray-700 pb-3">
+                    <Smartphone size={22} /> إعدادات التطبيق
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label className="block text-sm font-bold mb-2 opacity-80 text-white flex items-center gap-1.5">
+                            <LinkIcon size={15} className="text-cyan-400" />
+                            <span>أضف رابط</span>
+                        </label>
+                        <input
+                            type="url"
+                            dir="ltr"
+                            placeholder="https://example.com/file.apk"
+                            className={inputClass}
+                            value={localSettings.appDownloadLink || ''}
+                            onChange={e => setLocalSettings({ ...localSettings, appDownloadLink: e.target.value })}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-bold mb-2 opacity-80 text-white flex items-center gap-1.5">
+                            <Download size={15} className="text-cyan-400" />
+                            <span>لنك التطبيق</span>
+                        </label>
+                        <input
+                            type="url"
+                            dir="ltr"
+                            placeholder="https://example.com/app"
+                            className={inputClass}
+                            value={localSettings.appStoreLink || ''}
+                            onChange={e => setLocalSettings({ ...localSettings, appStoreLink: e.target.value })}
+                        />
+                    </div>
+                </div>
+                <button
+                    onClick={saveAppSettings}
+                    className="mt-6 w-full bg-cyan-600 hover:bg-cyan-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg transition transform active:scale-95 cursor-pointer"
+                >
+                    <Save size={20} /> حفظ
                 </button>
             </div>
 
@@ -597,32 +699,62 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
 
             {permModal && (
                 <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black/80 flex items-center justify-center p-4 overflow-y-auto">
-                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-lg my-auto">
-                        <h4 className="font-bold mb-6 text-white border-b pb-2 flex items-center gap-2">
-                            <Shield className="text-blue-500" size={18}/> تعديل صلاحيات: {permModal.name}
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
-                            {[
-                                { key: 'showDailySales', label: 'المبيعات اليومية' },
-                                { key: 'showSalesLog', label: 'سجل المبيعات' },
-                                { key: 'showInventoryReg', label: 'تسجيل المخزون' },
-                                { key: 'showInventoryLog', label: 'سجل المخزون' },
-                                { key: 'showCompetitorPrices', label: 'أسعار المنافسين' },
-                                { key: 'showCompetitorReports', label: 'تقارير المنافسين' }
-                            ].map(item => (
-                                <button 
-                                    key={item.key} 
-                                    onClick={() => toggleUserPerm(item.key as any)}
-                                    className={`p-3 rounded-xl border text-sm font-bold flex justify-between items-center transition ${ (permModal.permissions as any)?.[item.key] ? 'bg-blue-600/20 border-blue-500 text-white' : 'bg-white/5 border-white/5 text-white/40'}`}
-                                >
-                                    {item.label}
-                                    {(permModal.permissions as any)?.[item.key] ? <ToggleRight className="text-blue-400"/> : <ToggleLeft/>}
-                                </button>
-                            ))}
+                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-xl my-auto shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
+                            <h4 className="font-bold text-white flex items-center gap-2 text-base sm:text-lg">
+                                <Shield className="text-blue-500" size={20}/> تعديل صلاحيات الأقسام: {permModal.name}
+                            </h4>
+                            <button onClick={() => setPermModal(null)} className="text-white/50 hover:text-white p-1">
+                                <X size={20}/>
+                            </button>
                         </div>
+
+                        <div className="flex items-center justify-between gap-2 mb-4 bg-white/5 p-2.5 rounded-xl text-xs">
+                            <span className="text-gray-300 font-bold">إجراءات سريعة:</span>
+                            <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={() => handleSetAllPerms(true)}
+                                    className="bg-blue-600/30 hover:bg-blue-600 text-blue-300 hover:text-white px-3 py-1.5 rounded-lg font-bold transition text-xs"
+                                >
+                                    تحديد الكل
+                                </button>
+                                <button 
+                                    onClick={() => handleSetAllPerms(false)}
+                                    className="bg-red-600/30 hover:bg-red-600 text-red-300 hover:text-white px-3 py-1.5 rounded-lg font-bold transition text-xs"
+                                >
+                                    إلغاء تحديد الكل
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-5 max-h-[60vh] overflow-y-auto custom-scrollbar p-1">
+                            {ALL_SIDE_TABS.map(item => {
+                                const isEnabled = !!(permModal.permissions as any)?.[item.key];
+                                return (
+                                    <button 
+                                        key={item.key} 
+                                        onClick={() => toggleUserPerm(item.key as any)}
+                                        className={`p-3 rounded-xl border text-sm font-bold flex justify-between items-center transition cursor-pointer select-none active:scale-[0.98] ${ isEnabled ? 'bg-blue-600/20 border-blue-500 text-white shadow-sm' : 'bg-white/5 border-white/5 text-white/40 hover:bg-white/10 hover:text-white/70'}`}
+                                    >
+                                        <span className="truncate">{item.label}</span>
+                                        {isEnabled ? <ToggleRight size={22} className="text-blue-400 shrink-0"/> : <ToggleLeft size={22} className="shrink-0 text-white/30"/>}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <div className="text-[11px] text-blue-300/80 mb-4 bg-blue-950/40 border border-blue-500/20 p-2.5 rounded-xl flex items-center gap-2">
+                            <span>⚡</span>
+                            <span>يتم تفعيل الصلاحية وظهور الخانة للموظف لحظياً وفورياً بمجرد تحديدها.</span>
+                        </div>
+
                         <div className="flex gap-2">
-                            <button onClick={handleUpdatePermissions} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg active:scale-95 transition">حفظ التغييرات</button>
-                            <button onClick={() => setPermModal(null)} className="flex-1 bg-white/5 text-white py-3 rounded-xl">إغاء</button>
+                            <button onClick={handleUpdatePermissions} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-bold shadow-lg active:scale-95 transition cursor-pointer">
+                                حفظ وإغلاق
+                            </button>
+                            <button onClick={() => setPermModal(null)} className="flex-1 bg-white/5 hover:bg-white/10 text-white py-3 rounded-xl cursor-pointer transition">
+                                إلغاء
+                            </button>
                         </div>
                     </div>
                 </div>

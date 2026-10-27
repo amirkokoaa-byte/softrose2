@@ -1,6 +1,6 @@
 import { onCachedValue } from "../firebaseCache";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
 import { ref, push, update, remove, onValue } from "firebase/database";
 import { User } from '../types';
@@ -23,6 +23,78 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme, products }) =
     
     // Global template for competitor products
     const [competitorProductsDB, setCompetitorProductsDB] = useState<Record<string, any>>({});
+    const [salesList, setSalesList] = useState<any[]>([]);
+    const [employeeRouteBranches, setEmployeeRouteBranches] = useState<string[]>([]);
+
+    // جلب الفروع المسجلة في خط السير للموظف لحظياً
+    useEffect(() => {
+        const routesRef = ref(db, 'routes');
+        const unsubRoutes = onCachedValue(routesRef, 'routes', (snapRoutes) => {
+            const usersRef = ref(db, 'users');
+            const unsubUsers = onCachedValue(usersRef, 'users', (snapUsers) => {
+                const allRoutes = snapRoutes.exists() ? snapRoutes.val() : {};
+                const allUsers = snapUsers.exists() ? snapUsers.val() : {};
+
+                let userKey = user.key;
+                if (!userKey && allUsers) {
+                    const foundKey = Object.keys(allUsers).find(k => 
+                        allUsers[k]?.username?.toString().trim() === user.username?.trim() ||
+                        allUsers[k]?.name?.toString().trim() === user.name?.trim()
+                    );
+                    if (foundKey) userKey = foundKey;
+                }
+
+                let rawRoute: any = null;
+                if (userKey && allRoutes[userKey]) {
+                    rawRoute = allRoutes[userKey];
+                } else if (user.username && allRoutes[user.username]) {
+                    rawRoute = allRoutes[user.username];
+                } else if (user.name && allRoutes[user.name]) {
+                    rawRoute = allRoutes[user.name];
+                } else if (userKey && allUsers[userKey]?.branches) {
+                    rawRoute = allUsers[userKey].branches;
+                } else if (user.branches) {
+                    rawRoute = user.branches;
+                }
+
+                if (rawRoute) {
+                    let branches: string[] = [];
+                    if (Array.isArray(rawRoute)) {
+                        branches = rawRoute;
+                    } else if (typeof rawRoute === 'object') {
+                        branches = Object.values(rawRoute);
+                    }
+                    const clean = branches
+                        .map(b => (typeof b === 'string' ? b.trim() : ''))
+                        .filter(Boolean);
+                    setEmployeeRouteBranches(clean);
+                } else {
+                    setEmployeeRouteBranches([]);
+                }
+            });
+            return () => unsubUsers();
+        });
+        return () => unsubRoutes();
+    }, [user.key, user.username, user.name, user.branches]);
+
+    // حصر القائمة فقط على الفروع المسجلة في خط السير للموظف
+    const availableMarkets = useMemo(() => {
+        if (employeeRouteBranches.length > 0) {
+            return employeeRouteBranches;
+        }
+        if (user.role === 'admin') {
+            return markets;
+        }
+        return [];
+    }, [employeeRouteBranches, user.role, markets]);
+
+    useEffect(() => {
+        if (availableMarkets.length > 0) {
+            if (!selectedMarket || !availableMarkets.includes(selectedMarket)) {
+                setSelectedMarket(availableMarkets[0]);
+            }
+        }
+    }, [availableMarkets, selectedMarket]);
 
     useEffect(() => {
         const unsubCompanies = onCachedValue(ref(db, 'settings/companies'), 'settings_companies', snapshot => {
@@ -51,7 +123,18 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme, products }) =
                 setCompetitorProductsDB({});
             }
         });
-        return () => { unsubCompanies(); unsubProducts(); };
+
+        const unsubSales = onCachedValue(ref(db, 'sales'), 'sales', snap => {
+            if (snap.exists()) {
+                const val = snap.val();
+                const arr = Object.keys(val).map(k => ({ id: k, ...val[k] }));
+                setSalesList(arr);
+            } else {
+                setSalesList([]);
+            }
+        });
+
+        return () => { unsubCompanies(); unsubProducts(); unsubSales(); };
     }, []);
 
     const allCompanies = Array.from(new Set([...COMPANIES, ...customCompanies]));
@@ -180,7 +263,7 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme, products }) =
     const handleSaveReport = async () => {
         if (!selectedMarket || !selectedCompany) return alert("اكمل البيانات");
         
-        const validItems = currentTemplate
+        let validItems = currentTemplate
             .filter(i => pricesState[i.id] && pricesState[i.id] > 0)
             .map(i => ({ 
                 category: i.category, 
@@ -190,6 +273,33 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme, products }) =
             
         if (validItems.length === 0) return alert("يرجى إدخال أسعار بعض الأصناف");
 
+        // التدقيق وتصحيح أسعار سوفت روز أوتوماتيكياً في حال عدم توافقها مع المسجل في سجل المبيعات
+        let hasCorrected = false;
+        if (selectedCompany === 'Soft Rose' && salesList.length > 0) {
+            const marketSales = salesList
+                .filter(s => s.market && s.market.trim() === selectedMarket.trim())
+                .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            
+            const latestPriceMap: Record<string, number> = {};
+            marketSales.forEach(s => {
+                (s.items || []).forEach((item: any) => {
+                    const n = (item.name || '').trim();
+                    if (n && !latestPriceMap[n] && Number(item.price) > 0) {
+                        latestPriceMap[n] = Number(item.price);
+                    }
+                });
+            });
+
+            validItems = validItems.map(item => {
+                const salesPrice = latestPriceMap[item.name.trim()];
+                if (salesPrice && salesPrice > 0 && item.price !== salesPrice) {
+                    hasCorrected = true;
+                    return { ...item, price: salesPrice };
+                }
+                return item;
+            });
+        }
+
         await push(ref(db, 'competitor_prices'), {
             market: selectedMarket,
             company: selectedCompany,
@@ -198,36 +308,41 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme, products }) =
             employeeName: user.name,
             items: validItems
         });
-        alert("تم الحفظ بنجاح");
+        
+        if (hasCorrected) {
+            alert("تم الحفظ بنجاح، وتم تعديل بعض أسعار سوفت روز أوتوماتيكياً لمطابقتها بدقة مع سجل المبيعات.");
+        } else {
+            alert("تم الحفظ بنجاح");
+        }
         setPricesState({});
     };
 
-    const inputClass = "w-full p-4 rounded-2xl bg-gray-700 text-white border border-white/10 font-bold";
+    const inputClass = "w-full p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-gray-700 text-white border border-white/10 text-base font-bold outline-none focus:border-blue-500";
 
     return (
         <div className="space-y-6 pb-20">
             <h2 className="text-2xl font-bold text-white">تسجيل أسعار المنافسين</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-800 p-6 rounded-3xl border border-white/10 shadow-2xl">
+            <div className="grid grid-cols-2 gap-2 sm:gap-4 bg-gray-800 p-3.5 sm:p-6 rounded-3xl border border-white/10 shadow-2xl">
                 <div>
                     <div className="flex justify-between items-center mb-1">
-                        <label className="block text-xs font-bold opacity-60 text-white">الماركت / الفرع</label>
+                        <label className="block text-[10px] sm:text-xs font-bold opacity-60 text-white truncate">الماركت / الفرع</label>
                         {user.role === 'admin' && (
-                            <button onClick={handleAddMarket} className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1">
-                                <Plus size={12}/> إضافة ماركت
+                            <button onClick={handleAddMarket} className="text-[9px] sm:text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-0.5 shrink-0">
+                                <Plus size={11}/> إضافة
                             </button>
                         )}
                     </div>
                     <select className={inputClass} value={selectedMarket} onChange={e => setSelectedMarket(e.target.value)}>
-                        <option value="">اختر الماركت...</option>
-                        {markets.map(m => <option key={m} value={m}>{m}</option>)}
+                        <option value="">{availableMarkets.length > 0 ? "اختر الماركت (خط السير)..." : "لا توجد فروع مسجلة في خط السير"}</option>
+                        {availableMarkets.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                 </div>
                 <div>
                     <div className="flex justify-between items-center mb-1">
-                        <label className="block text-xs font-bold opacity-60 text-white">الشركة المنافسة</label>
+                        <label className="block text-[10px] sm:text-xs font-bold opacity-60 text-white truncate">الشركة المنافسة</label>
                         {user.role === 'admin' && (
-                            <button onClick={handleAddCompany} className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1">
-                                <Plus size={12}/> إضافة شركة
+                            <button onClick={handleAddCompany} className="text-[9px] sm:text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-0.5 shrink-0">
+                                <Plus size={11}/> إضافة
                             </button>
                         )}
                     </div>
@@ -291,7 +406,7 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme, products }) =
                                             <input 
                                                 type="number" 
                                                 placeholder="أدخل السعر..." 
-                                                className="w-full max-w-[120px] p-2 bg-gray-700/50 rounded-lg text-white text-center text-xs font-black border border-white/5 focus:border-blue-400 focus:bg-gray-700 outline-none transition"
+                                                className="w-full max-w-[120px] p-2 bg-gray-700/50 rounded-lg text-white text-center text-base font-black border border-white/5 focus:border-blue-400 focus:bg-gray-700 outline-none transition"
                                                 value={pricesState[item.id] || ''}
                                                 onChange={e => {
                                                     setPricesState(prev => ({
