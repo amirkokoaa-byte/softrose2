@@ -141,9 +141,15 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const mainEl = mainRef.current;
+    let rafId: number | null = null;
     const handleScroll = () => {
-      const scrollPos = mainEl ? mainEl.scrollTop : (window.scrollY || document.documentElement.scrollTop);
-      setShowScrollTop(scrollPos > 120);
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        const scrollPos = mainEl ? mainEl.scrollTop : (window.scrollY || document.documentElement.scrollTop);
+        const shouldShow = scrollPos > 120;
+        setShowScrollTop(prev => (prev === shouldShow ? prev : shouldShow));
+      });
     };
 
     if (mainEl) {
@@ -152,6 +158,7 @@ const App: React.FC = () => {
     window.addEventListener('scroll', handleScroll, { passive: true });
 
     return () => {
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
       if (mainEl) mainEl.removeEventListener('scroll', handleScroll);
       window.removeEventListener('scroll', handleScroll);
     };
@@ -321,31 +328,46 @@ const App: React.FC = () => {
 
   useEffect(() => {
     // مراقبة النوافذ المنبثقة للتأكد من أنها تفتح دائماً في أعلى الشاشة وإخفاء الشريط العلوي فور فتح أي شاشة منبثقة
+    let rafId: number | null = null;
     const checkModals = () => {
+      rafId = null;
       const modal = document.querySelector<HTMLElement>(
         'div[class*="fixed"][class*="z-[999"], div[class*="fixed"][class*="z-[100"], div[class*="fixed"][class*="z-[120"], div[class*="fixed"][class*="z-[140"]'
       );
       const open = !!modal;
-      setIsAnyModalOpen(open);
+      setIsAnyModalOpen(prev => (prev === open ? prev : open));
       if (open) {
-        document.body.classList.add('modal-open');
+        if (!document.body.classList.contains('modal-open')) {
+          document.body.classList.add('modal-open');
+        }
         if (modal && modal.dataset.modalInit !== 'true') {
           modal.scrollTop = 0;
           modal.dataset.modalInit = 'true';
         }
-      } else {
+      } else if (document.body.classList.contains('modal-open')) {
         document.body.classList.remove('modal-open');
       }
     };
 
-    const observer = new MutationObserver(() => {
-      checkModals();
+    const observer = new MutationObserver((mutations) => {
+      let hasChildListChange = false;
+      for (let i = 0; i < mutations.length; i++) {
+        if (mutations[i].type === 'childList' && (mutations[i].addedNodes.length > 0 || mutations[i].removedNodes.length > 0)) {
+          hasChildListChange = true;
+          break;
+        }
+      }
+      if (!hasChildListChange) return;
+      if (rafId === null) {
+        rafId = window.requestAnimationFrame(checkModals);
+      }
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
     checkModals();
 
     return () => {
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
       observer.disconnect();
       document.body.classList.remove('modal-open');
     };
@@ -394,10 +416,10 @@ const App: React.FC = () => {
   return (
     <div className="bg-slate-950 text-white min-h-screen flex flex-col overflow-hidden relative selection:bg-blue-500/30">
       {/* خلفيات إضاءة نيون هادئة متوهجة تبرز وتدعم تأثير الزجاج المصنفر الشفاف Glassmorphism */}
-      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-        <div className="absolute -top-32 -right-32 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" style={{ animationDuration: '6s' }} />
+      <div className="hidden md:block fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        <div className="absolute -top-32 -right-32 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute top-1/3 left-1/4 w-[500px] h-[500px] bg-blue-500/15 rounded-full blur-[100px] pointer-events-none" />
-        <div className="absolute -bottom-32 -left-32 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" style={{ animationDuration: '8s' }} />
+        <div className="absolute -bottom-32 -left-32 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
       </div>
 
       {welcomeToast && (

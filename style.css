@@ -125,8 +125,10 @@ input::placeholder {
   to { transform: translate(-50%, 20px); opacity: 1; }
 }
 
-.star-of-month-gray {
-  background-color: #808080 !important;
+.star-of-month-gray,
+.bg-\[\#808080\] {
+  background-color: #374151 !important;
+  opacity: 1 !important;
 }
 
 /* Hide scrollbar completely while maintaining scroll functionality */
@@ -140,6 +142,11 @@ input::placeholder {
   scrollbar-width: none !important;
 }
 
+/* Lock background main scroll when any modal is open on both mobile and desktop */
+body.modal-open main {
+  overflow: hidden !important;
+}
+
 /* All modal popups: stay at top and centered */
 .fixed.z-\[9999\],
 .fixed.z-\[99999\],
@@ -150,6 +157,10 @@ div[class*="fixed"][class*="z-\[999"],
 div[class*="fixed"][class*="z-\[100"],
 div[class*="fixed"][class*="z-\[120"],
 div[class*="fixed"][class*="z-\[140"],
+div[class*="fixed"][class*="z-[999"],
+div[class*="fixed"][class*="z-[100"],
+div[class*="fixed"][class*="z-[120"],
+div[class*="fixed"][class*="z-[140"],
 div[class*="fixed"][class*="inset-0"][class*="bg-black"],
 div[class*="fixed"][class*="top-0"][class*="bg-black"] {
   display: flex !important;
@@ -159,6 +170,7 @@ div[class*="fixed"][class*="top-0"][class*="bg-black"] {
   padding-top: 1.5rem !important;
   padding-bottom: 2.5rem !important;
   overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
   box-sizing: border-box !important;
 }
 
@@ -172,6 +184,10 @@ div[class*="fixed"][class*="z-\[999"] > div,
 div[class*="fixed"][class*="z-\[100"] > div,
 div[class*="fixed"][class*="z-\[120"] > div,
 div[class*="fixed"][class*="z-\[140"] > div,
+div[class*="fixed"][class*="z-[999"] > div,
+div[class*="fixed"][class*="z-[100"] > div,
+div[class*="fixed"][class*="z-[120"] > div,
+div[class*="fixed"][class*="z-[140"] > div,
 div[class*="fixed"][class*="inset-0"][class*="bg-black"] > div,
 div[class*="fixed"][class*="top-0"][class*="bg-black"] > div {
   margin-top: 0 !important;
@@ -180,8 +196,19 @@ div[class*="fixed"][class*="top-0"][class*="bg-black"] > div {
   margin-bottom: auto !important;
 }
 
-/* نسخة الهاتف: ملء الشاشة مع حشو مريح */
+/* نسخة الهاتف ووضع PWA: ملء الشاشة مع أداء تصفح سريع ومنع شفافية الخلفية خلف الشاشات المنبثقة */
 @media (max-width: 767px) {
+  main,
+  .custom-scrollbar {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* إلغاء الفلتر الضبابي الثقيل في الهاتف لمنع بطء التصفح ومنع ظهور العناصر الخلفية بشفافية */
+  [class*="backdrop-blur"] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
   .fixed.z-\[9999\],
   .fixed.z-\[99999\],
   .fixed.z-\[10000\],
@@ -191,6 +218,10 @@ div[class*="fixed"][class*="top-0"][class*="bg-black"] > div {
   div[class*="fixed"][class*="z-\[100"],
   div[class*="fixed"][class*="z-\[120"],
   div[class*="fixed"][class*="z-\[140"],
+  div[class*="fixed"][class*="z-[999"],
+  div[class*="fixed"][class*="z-[100"],
+  div[class*="fixed"][class*="z-[120"],
+  div[class*="fixed"][class*="z-[140"],
   div[class*="fixed"][class*="inset-0"][class*="bg-black"],
   div[class*="fixed"][class*="top-0"][class*="bg-black"] {
     right: 0 !important;
@@ -200,6 +231,7 @@ div[class*="fixed"][class*="top-0"][class*="bg-black"] > div {
     padding-bottom: 2rem !important;
     padding-left: 0.5rem !important;
     padding-right: 0.5rem !important;
+    background-color: rgba(2, 6, 23, 0.98) !important;
   }
 }
 
@@ -214,6 +246,10 @@ div[class*="fixed"][class*="top-0"][class*="bg-black"] > div {
   div[class*="fixed"][class*="z-\[100"],
   div[class*="fixed"][class*="z-\[120"],
   div[class*="fixed"][class*="z-\[140"],
+  div[class*="fixed"][class*="z-[999"],
+  div[class*="fixed"][class*="z-[100"],
+  div[class*="fixed"][class*="z-[120"],
+  div[class*="fixed"][class*="z-[140"],
   div[class*="fixed"][class*="inset-0"][class*="bg-black"],
   div[class*="fixed"][class*="top-0"][class*="bg-black"] {
     right: 18rem !important;
@@ -235,6 +271,10 @@ div[class*="fixed"][class*="top-0"][class*="bg-black"] > div {
   div[class*="fixed"][class*="z-\[100"] > div,
   div[class*="fixed"][class*="z-\[120"] > div,
   div[class*="fixed"][class*="z-\[140"] > div,
+  div[class*="fixed"][class*="z-[999"] > div,
+  div[class*="fixed"][class*="z-[100"] > div,
+  div[class*="fixed"][class*="z-[120"] > div,
+  div[class*="fixed"][class*="z-[140"] > div,
   div[class*="fixed"][class*="inset-0"][class*="bg-black"] > div,
   div[class*="fixed"][class*="top-0"][class*="bg-black"] > div {
     max-width: min(100%, calc(100vw - 18rem - 4rem)) !important;
@@ -246,3 +286,4 @@ body.modal-open .app-main-header,
 body.modal-open .app-top-ticker {
   display: none !important;
 }
+

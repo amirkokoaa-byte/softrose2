@@ -114,21 +114,23 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
     useEffect(() => {
         if (user.key) {
             const targetRef = ref(db, `targets/${user.key}`);
-            const unsub = onCachedValue(targetRef, 'targets', (snapshot) => {
+            const unsub = onCachedValue(targetRef, `targets_${user.key}`, (snapshot, isCached) => {
                 if (snapshot.exists()) {
                     const data = snapshot.val() as UserTarget;
                     const now = new Date();
                     const currentMonth = `${now.getFullYear()}-${now.getMonth() + 1}`;
                     
-                    if (data.lastResetMonth !== currentMonth) {
-                        const historyRef = ref(db, `target_history/${user.key}`);
-                        push(historyRef, {
-                            userId: data.userId || user.key,
-                            employeeName: data.employeeName || user.name || 'غير معروف',
-                            month: data.lastResetMonth,
-                            targetAmount: data.finalTarget || 0,
-                            achievedAmount: data.achieved || 0
-                        });
+                    if (!isCached && data && typeof data.finalTarget !== 'undefined' && data.lastResetMonth !== currentMonth) {
+                        if (data.lastResetMonth) {
+                            const historyRef = ref(db, `target_history/${user.key}`);
+                            push(historyRef, {
+                                userId: data.userId || user.key,
+                                employeeName: data.employeeName || user.name || 'غير معروف',
+                                month: data.lastResetMonth,
+                                targetAmount: data.finalTarget || 0,
+                                achievedAmount: data.achieved || 0
+                            });
+                        }
 
                         update(targetRef, {
                             achieved: 0,

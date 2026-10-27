@@ -414,7 +414,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme, products, highlightSa
         return list;
     }, [explicitEmployees, usersList, sales, archiveData]);
 
-    const resolveMarketForSale = (item: any, allData?: any): string => {
+    const resolveMarketForSale = (item: any, empMarketMap?: Map<string, string>): string => {
         let m = (item?.market || '').trim();
         if (m && m !== 'undefined' && m !== 'null' && !m.includes('اختر')) {
             return m;
@@ -453,18 +453,11 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme, products, highlightSa
                 return matchedUser.branches[0].trim();
             }
         }
-        if (allData && typeof allData === 'object') {
-            const values = Array.isArray(allData) ? allData : Object.values(allData);
-            for (const otherSale of values as any[]) {
-                if (
-                    otherSale && 
-                    ((otherSale.employeeName && item.employeeName && otherSale.employeeName.trim().toLowerCase() === item.employeeName.trim().toLowerCase()) || 
-                     (otherSale.username && item.username && otherSale.username.trim() === item.username.trim())) &&
-                    otherSale.market && otherSale.market.trim() && otherSale.market !== 'undefined'
-                ) {
-                    return otherSale.market.trim();
-                }
-            }
+        if (empMarketMap) {
+            const empNameKey = (item?.employeeName || '').trim().toLowerCase();
+            const userKey = (item?.username || '').trim().toLowerCase();
+            if (empNameKey && empMarketMap.has(empNameKey)) return empMarketMap.get(empNameKey)!;
+            if (userKey && empMarketMap.has(userKey)) return empMarketMap.get(userKey)!;
         }
         return 'محلاوي الحي العاشر';
     };
@@ -472,7 +465,7 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme, products, highlightSa
     const allAvailableFilterMarkets = useMemo(() => {
         const set = new Set<string>(markets);
         sales.forEach(s => {
-            const m = (s.market || resolveMarketForSale(s) || '').trim();
+            const m = (s.market || '').trim();
             if (m && !m.includes('اختر') && m !== 'undefined' && m !== 'null') {
                 set.add(m);
             }
@@ -483,27 +476,51 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme, products, highlightSa
 
     useEffect(() => {
         let unsubUsers, unsubTargets, unsubHistory;
-        const unsubSales = onCachedValue(ref(db, 'sales'), 'sales', (snapshot) => {
+        const unsubSales = onCachedValue(ref(db, 'sales'), 'sales', (snapshot, isCached) => {
             const data = snapshot.val();
             if (data) {
-                let allLoaded: SaleRecord[] = Object.keys(data).map(key => {
+                const empMarketMap = new Map<string, string>();
+                const keys = Object.keys(data);
+                for (let i = 0; i < keys.length; i++) {
+                    const otherSale = data[keys[i]];
+                    if (otherSale && otherSale.market && typeof otherSale.market === 'string') {
+                        const m = otherSale.market.trim();
+                        if (m && m !== 'undefined' && m !== 'null' && !m.includes('اختر')) {
+                            if (otherSale.employeeName) empMarketMap.set(otherSale.employeeName.trim().toLowerCase(), m);
+                            if (otherSale.username) empMarketMap.set(otherSale.username.trim().toLowerCase(), m);
+                        }
+                    }
+                }
+
+                let missingFixCount = 0;
+                const allLoaded: SaleRecord[] = new Array(keys.length);
+                for (let i = 0; i < keys.length; i++) {
+                    const key = keys[i];
                     const item = data[key];
-                    const market = resolveMarketForSale(item, data);
-                    if (!item.market || item.market.trim() === '' || item.market === 'undefined' || item.market === 'null') {
+                    const hasValidMarket = item.market && typeof item.market === 'string' && item.market.trim() !== '' && item.market !== 'undefined' && item.market !== 'null';
+                    const market = hasValidMarket ? item.market.trim() : resolveMarketForSale(item, empMarketMap);
+                    if (!hasValidMarket && !isCached && missingFixCount < 5) {
+                        missingFixCount++;
                         update(ref(db, `sales/${key}`), { market }).catch(() => {});
                     }
-                    return { id: key, ...item, market };
-                });
+                    allLoaded[i] = { id: key, ...item, market };
+                }
+
                 setAllCompanySales(allLoaded);
-                let loadedSales = [...allLoaded];
+                let loadedSales = allLoaded;
                 if (user.role !== 'admin' && !user.canViewAllSales) {
-                    loadedSales = loadedSales.filter(s => {
-                        const nameMatches = s.employeeName && user.name && s.employeeName.trim().toLowerCase() === user.name.trim().toLowerCase();
-                        const usernameMatches = s.username && user.username && s.username.trim() === user.username.trim();
+                    const targetName = (user.name || '').trim().toLowerCase();
+                    const targetUser = (user.username || '').trim();
+                    loadedSales = allLoaded.filter(s => {
+                        const nameMatches = s.employeeName && targetName && s.employeeName.trim().toLowerCase() === targetName;
+                        const usernameMatches = s.username && targetUser && s.username.trim() === targetUser;
                         return nameMatches || usernameMatches;
                     });
+                } else {
+                    loadedSales = [...allLoaded];
                 }
-                setSales(loadedSales.sort((a, b) => b.timestamp - a.timestamp));
+                loadedSales.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                setSales(loadedSales);
             } else { 
                 setAllCompanySales([]);
                 setSales([]); 
@@ -547,36 +564,48 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme, products, highlightSa
         };
     }, [user]);
 
-    // دالة مساعدة لتوحيد صيغة التاريخ إلى YYYY-MM-DD لمطابقة دقيقة
+    const isoDateCacheRef = React.useRef<WeakMap<SaleRecord, string>>(new WeakMap());
+
+    // دالة مساعدة لتوحيد صيغة التاريخ إلى YYYY-MM-DD لمطابقة دقيقة مع تخزين مؤقت فوري
     const getSaleISODate = (s: SaleRecord): string => {
+        if (!s || typeof s !== 'object') return '';
+        const cached = isoDateCacheRef.current.get(s);
+        if (cached !== undefined) return cached;
+
+        let result = '';
         if (s.timestamp && typeof s.timestamp === 'number' && !isNaN(s.timestamp)) {
             const d = new Date(s.timestamp);
             const y = d.getFullYear();
             const m = String(d.getMonth() + 1).padStart(2, '0');
             const day = String(d.getDate()).padStart(2, '0');
-            return `${y}-${m}-${day}`;
-        }
-        if (s.date) {
+            result = `${y}-${m}-${day}`;
+        } else if (s.date) {
             const clean = s.date
                 .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString())
                 .replace(/[\u200e\u200f]/g, '')
                 .trim();
-            if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
-            const parts = clean.split(/[-/]/);
-            if (parts.length === 3) {
-                const [p1, p2, p3] = parts;
-                if (p1.length === 4) return `${p1}-${p2.padStart(2, '0')}-${p3.padStart(2, '0')}`;
-                if (p3.length === 4) return `${p3}-${p2.padStart(2, '0')}-${p1.padStart(2, '0')}`;
-            }
-            const parsed = new Date(clean);
-            if (!isNaN(parsed.getTime())) {
-                const y = parsed.getFullYear();
-                const m = String(parsed.getMonth() + 1).padStart(2, '0');
-                const day = String(parsed.getDate()).padStart(2, '0');
-                return `${y}-${m}-${day}`;
+            if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
+                result = clean;
+            } else {
+                const parts = clean.split(/[-/]/);
+                if (parts.length === 3) {
+                    const [p1, p2, p3] = parts;
+                    if (p1.length === 4) result = `${p1}-${p2.padStart(2, '0')}-${p3.padStart(2, '0')}`;
+                    else if (p3.length === 4) result = `${p3}-${p2.padStart(2, '0')}-${p1.padStart(2, '0')}`;
+                }
+                if (!result) {
+                    const parsed = new Date(clean);
+                    if (!isNaN(parsed.getTime())) {
+                        const y = parsed.getFullYear();
+                        const m = String(parsed.getMonth() + 1).padStart(2, '0');
+                        const day = String(parsed.getDate()).padStart(2, '0');
+                        result = `${y}-${m}-${day}`;
+                    }
+                }
             }
         }
-        return '';
+        isoDateCacheRef.current.set(s, result);
+        return result;
     };
 
     useEffect(() => {
@@ -717,13 +746,22 @@ const normalizeName = (name: string) => {
         return Array.from(names).sort();
     }, [sales, usersList]);
 
-    // حساب نتائج تقرير مبيعات الأصناف
+    // حساب نتائج تقرير مبيعات الأصناف (فقط عند فتح نافذة مبيعات الأصناف لتسريع الأداء)
     const reportResults = useMemo<{ 
         totalQty: number; 
         totalValue: number; 
         itemsGrouped: Record<string, { price: number; qty: number; total: number }>;
         categoryGrouped: Record<string, number>;
     }>(() => {
+        if (!showProductSalesModal && !showProductSalesDataModal) {
+            return { totalQty: 0, totalValue: 0, itemsGrouped: {}, categoryGrouped: {} };
+        }
+
+        const prodCatMap = new Map<string, string>();
+        products.forEach(p => {
+            prodCatMap.set(normalizeName(p.name), p.category || 'Uncategorized');
+        });
+
         let results = sales;
         if (reportMarket !== 'all') results = results.filter(s => s.market === reportMarket);
         if (reportEmployee !== 'all') results = results.filter(s => s.employeeName && s.employeeName.trim() === reportEmployee.trim());
@@ -757,8 +795,7 @@ const normalizeName = (name: string) => {
                     itemsGrouped[nName].total += (i.qty * i.price);
                     
                     // compute category
-                    const prod = products.find(p => normalizeName(p.name) === nName);
-                    const cat = prod?.category || 'Uncategorized';
+                    const cat = prodCatMap.get(nName) || 'Uncategorized';
                     if (!categoryGrouped[cat]) categoryGrouped[cat] = 0;
                     categoryGrouped[cat] += (i.qty * i.price);
                 }
@@ -766,7 +803,7 @@ const normalizeName = (name: string) => {
         });
 
         return { totalQty, totalValue, itemsGrouped, categoryGrouped };
-    }, [sales, reportItem, reportMarket, reportEmployee, reportStart, reportEnd, products]);
+    }, [showProductSalesModal, showProductSalesDataModal, sales, reportItem, reportMarket, reportEmployee, reportStart, reportEnd, products]);
 
     
     const handleShareSales = async (isHighQuality: boolean) => {
@@ -1592,6 +1629,9 @@ const normalizeName = (name: string) => {
     const [isExportingTargetPDF, setIsExportingTargetPDF] = useState(false);
 
     const targetItemsForExport = useMemo(() => {
+        if (!showCurrentTargetsModal && !showTargetModal && !showPastTargetsModal && !isExportingTargetPDF && !isExportingTargetImage) {
+            return [];
+        }
         if (selectedTargetMonth === 'current') {
             const now = new Date();
             const targetsWithAchieved = targetsList.map(t => {
@@ -1656,7 +1696,7 @@ const normalizeName = (name: string) => {
                 market: item.market
             }));
         }
-    }, [selectedTargetMonth, targetsList, sales, usersList, targetPrintEmployee, archiveData]);
+    }, [showCurrentTargetsModal, showTargetModal, showPastTargetsModal, isExportingTargetPDF, isExportingTargetImage, selectedTargetMonth, targetsList, sales, usersList, targetPrintEmployee, archiveData]);
 
     const pagesOfTargetResults = useMemo(() => {
         if (!targetItemsForExport || targetItemsForExport.length === 0) return [];
@@ -2088,7 +2128,7 @@ const normalizeName = (name: string) => {
         return result;
     };
 
-    const stars = getStarOfMonth();
+    const stars = useMemo(() => getStarOfMonth(), [allCompanySales, sales]);
 
     // Faqd helper functions
     const normalizeArabicText = (s: string) => {
@@ -2226,6 +2266,23 @@ const normalizeName = (name: string) => {
             return [];
         }
 
+        // فهرسة المبيعات مرة واحدة O(N) لتسريع حساب الفقد فوراً
+        const salesByDateAndEmp = new Map<string, Map<string, number>>();
+        for (let i = 0; i < sales.length; i++) {
+            const s = sales[i];
+            const sDate = getSaleISODate(s);
+            if (!sDate || sDate < start || sDate > end) continue;
+            let dateMap = salesByDateAndEmp.get(sDate);
+            if (!dateMap) {
+                dateMap = new Map<string, number>();
+                salesByDateAndEmp.set(sDate, dateMap);
+            }
+            const sEmp = (s.employeeName || '').trim().toLowerCase();
+            const sUser = (s.username || '').trim().toLowerCase();
+            if (sEmp) dateMap.set(sEmp, (dateMap.get(sEmp) || 0) + 1);
+            if (sUser && sUser !== sEmp) dateMap.set(sUser, (dateMap.get(sUser) || 0) + 1);
+        }
+
         const results: Array<{
             employeeName: string;
             dayName: string;
@@ -2238,32 +2295,27 @@ const normalizeName = (name: string) => {
 
         targetEmployees.forEach(empName => {
             const normEmp = empName.trim().toLowerCase();
+            const normAr = normalizeArabicText(empName);
             const userObj = usersList.find(u => 
-                (u.name && normalizeArabicText(u.name) === normEmp) || 
-                (u.username && normalizeArabicText(u.username) === normEmp)
+                (u.name && normalizeArabicText(u.name) === normAr) || 
+                (u.username && normalizeArabicText(u.username) === normAr)
             );
             const altEmp = userObj?.username ? userObj.username.trim().toLowerCase() : '';
 
             dateList.forEach(dStr => {
                 const dayName = getArabicDayName(dStr);
+                const dateMap = salesByDateAndEmp.get(dStr);
 
-                // فحص دقيق لعدد عمليات تسجيل المبيعات للموظف في هذا اليوم المحدد
                 let salesCount = 0;
-                sales.forEach(s => {
-                    const sDate = getSaleISODate(s);
-                    if (sDate === dStr) {
-                        const sEmp = (s.employeeName || '').trim().toLowerCase();
-                        const sUser = (s.username || '').trim().toLowerCase();
-                        if (sEmp === normEmp || sUser === normEmp || (altEmp && (sEmp === altEmp || sUser === altEmp))) {
-                            salesCount++;
-                        }
+                if (dateMap) {
+                    salesCount += dateMap.get(normEmp) || 0;
+                    if (altEmp && altEmp !== normEmp) {
+                        salesCount += dateMap.get(altEmp) || 0;
                     }
-                });
+                }
 
                 const hasSales = salesCount > 0;
                 const statusLabel = hasSales ? "نعم" : getEmployeeLeaveStatus(empName, dStr, dayName);
-                
-                // في حالة تسجيل مبيعات أكثر من مرة يظهر عدد المرات، وفي حالة تسجيل مبيعات واحدة لا يظهر أي أرقام
                 const salesCountDisplay = salesCount > 1 ? salesCount.toString() : '';
 
                 results.push({
@@ -2281,10 +2333,11 @@ const normalizeName = (name: string) => {
         return results;
     };
 
-    // حساب نتائج تقرير الفقد لحظياً بمجرد اختيار الاسم أو التواريخ
+    // حساب نتائج تقرير الفقد لحظياً عند فتح شاشة الفقد فقط لتسريع تصفح السجل
     const faqdResults = useMemo(() => {
+        if (!showFaqdModal && !isExportingFaqdPDF) return [];
         return computeFaqdData();
-    }, [faqdSelectedEmployee, faqdStartDate, faqdEndDate, sales, employeesWithSales, leaveHistory, leaveBalances, usersList]);
+    }, [showFaqdModal, isExportingFaqdPDF, faqdSelectedEmployee, faqdStartDate, faqdEndDate, sales, employeesWithSales, leaveHistory, leaveBalances, usersList]);
 
     const handleExportFaqdExcel = () => {
         const currentResults = faqdResults;
@@ -2621,8 +2674,19 @@ const normalizeName = (name: string) => {
         };
     };
 
-    // تقرير الأداء المجهز للعرض
+    // تقرير الأداء المجهز للعرض (يحسب فقط عند فتح شاشة الأداء لتسريع التصفح)
     const performanceReportData = useMemo(() => {
+        if (!showPerformanceModal) {
+            return {
+                isAll: true,
+                employeesList: [],
+                companyTotalAchieved: 0,
+                companyTotalTarget: 0,
+                companyOverallSalesRate: 0,
+                avgFinalScore: 0,
+                companyMonthly: []
+            };
+        }
         if (perfEmployee === 'all') {
             const list = employeesWithSales.map(emp => computeEmployeeFullPerformance(emp, selectedPerfYear, perfEndMonth));
             const companyTotalAchieved = list.reduce((a, b) => a + b.totalAchieved, 0);
@@ -2668,7 +2732,7 @@ const normalizeName = (name: string) => {
                 single
             };
         }
-    }, [perfEmployee, selectedPerfYear, perfEndMonth, sales, archiveData, targetsList, leaveBalances, leaveHistory, employeesWithSales, usersList]);
+    }, [showPerformanceModal, perfEmployee, selectedPerfYear, perfEndMonth, sales, archiveData, targetsList, leaveBalances, leaveHistory, employeesWithSales, usersList]);
 
     // تصدير الأداء إكسيل
     const handleExportPerformanceExcel = () => {
@@ -3224,9 +3288,23 @@ const normalizeName = (name: string) => {
     };
 
 
+    const isAnySalesModalOpen = Boolean(
+        editingSale ||
+        showTargetModal ||
+        showArchiveModal ||
+        showProductSalesModal ||
+        showProductSalesDataModal ||
+        showExportModal ||
+        showCurrentTargetsModal ||
+        showPastTargetsModal ||
+        showFaqdModal ||
+        showPerformanceModal
+    );
+
     return (
-        <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+        <>
+        <div className={isAnySalesModalOpen ? 'hidden' : 'space-y-6'}>
+            <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 relative z-40">
                 <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2 text-white shrink-0"><FileSpreadsheet /> سجل المبيعات</h2>
                 {user.role === 'admin' && (
                     <div className="grid grid-cols-3 gap-1.5 sm:flex sm:items-center sm:gap-2 w-full sm:w-auto">
@@ -3254,7 +3332,7 @@ const normalizeName = (name: string) => {
                                 <ChevronDown size={13} className={`transition-transform duration-200 shrink-0 ${showFaqdDropdown ? 'rotate-180' : ''}`}/>
                             </button>
                             {showFaqdDropdown && (
-                                <div className="absolute right-0 sm:left-auto mt-2 w-44 bg-gray-900 border border-white/10 rounded-2xl shadow-2xl z-50 py-1.5 overflow-hidden backdrop-blur-xl animate-in fade-in zoom-in-95">
+                                <div className="absolute right-0 sm:left-auto mt-2 w-44 bg-gray-900 border border-white/20 rounded-2xl shadow-2xl z-[100] py-1.5 overflow-hidden" style={{ backgroundColor: '#0f172a' }}>
                                     <button 
                                         onClick={() => { 
                                             setShowFaqdDropdown(false); 
@@ -3295,7 +3373,7 @@ const normalizeName = (name: string) => {
                                 <ChevronDown size={13} className={`transition-transform duration-200 shrink-0 ${showTargetDropdown ? 'rotate-180' : ''}`}/>
                             </button>
                             {showTargetDropdown && (
-                                <div className="absolute left-0 mt-2 w-48 bg-gray-900 border border-white/10 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden backdrop-blur-xl animate-in fade-in zoom-in-95">
+                                <div className="absolute left-0 mt-2 w-48 bg-gray-900 border border-white/20 rounded-2xl shadow-2xl z-[100] py-2 overflow-hidden" style={{ backgroundColor: '#0f172a' }}>
                                     <button 
                                         onClick={() => { setShowTargetDropdown(false); setShowProductSalesModal(true); }}
                                         className="w-full text-right px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-600/30 flex items-center gap-2 transition"
@@ -3334,31 +3412,30 @@ const normalizeName = (name: string) => {
                 </div>
             )}
 
-            {stars && stars.first && (
-                <div className="bg-[#808080] p-6 rounded-3xl border border-white/20 shadow-2xl relative overflow-hidden group">
-                    <div className="absolute -right-4 -top-4 opacity-10 group-hover:rotate-12 transition-transform duration-700"><Trophy size={120} /></div>
-                    <div className="text-center mb-6 relative z-10">
-                        <Trophy className="text-yellow-400 animate-pulse mx-auto mb-2" size={40} />
+            {!isAnySalesModalOpen && stars && stars.first && (
+                <div className="star-of-month-gray bg-gray-800 p-6 rounded-3xl border border-white/20 shadow-2xl relative overflow-hidden" style={{ backgroundColor: '#374151' }}>
+                    <div className="text-center mb-6">
+                        <Trophy className="text-yellow-400 mx-auto mb-2" size={40} />
                         <h3 className="text-xl font-black text-white uppercase tracking-widest">نجوم الشهر الحالي</h3>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-2 sm:gap-6 w-full max-w-2xl mx-auto relative z-10">
+                    <div className="grid grid-cols-2 gap-2 sm:gap-6 w-full max-w-2xl mx-auto">
                         {/* المركز الأول */}
-                        <div className="flex flex-col items-center bg-white/10 p-2.5 sm:p-4 rounded-2xl border border-yellow-400/50 min-w-0 text-center">
+                        <div className="flex flex-col items-center bg-gray-900 p-2.5 sm:p-4 rounded-2xl border border-yellow-400/50 min-w-0 text-center" style={{ backgroundColor: '#1f2937' }}>
                             <div className="text-yellow-400 text-xs sm:text-sm font-black mb-1">المركز الأول</div>
                             <div className="text-sm sm:text-2xl font-black text-white truncate max-w-full">{stars.first.name}</div>
-                            <div className="text-[10px] sm:text-sm font-bold opacity-80 text-white mt-1 sm:mt-2">مبيعات: <span className="text-green-300 font-black">{(Number(stars.first.total) || 0).toLocaleString()} ج.م</span></div>
+                            <div className="text-[10px] sm:text-sm font-bold text-white mt-1 sm:mt-2">مبيعات: <span className="text-green-300 font-black">{(Number(stars.first.total) || 0).toLocaleString()} ج.م</span></div>
                         </div>
 
                         {/* المركز الثاني */}
                         {stars.second ? (
-                            <div className="flex flex-col items-center bg-white/5 p-2.5 sm:p-4 rounded-2xl border border-gray-400/50 min-w-0 text-center">
+                            <div className="flex flex-col items-center bg-gray-900 p-2.5 sm:p-4 rounded-2xl border border-gray-400/50 min-w-0 text-center" style={{ backgroundColor: '#111827' }}>
                                 <div className="text-gray-300 text-xs sm:text-sm font-black mb-1">المركز الثاني</div>
                                 <div className="text-xs sm:text-xl font-black text-white truncate max-w-full">{stars.second.name}</div>
-                                <div className="text-[10px] sm:text-sm font-bold opacity-80 text-white mt-1 sm:mt-2">مبيعات: <span className="text-green-300 font-black">{(Number(stars.second.total) || 0).toLocaleString()} ج.م</span></div>
+                                <div className="text-[10px] sm:text-sm font-bold text-white mt-1 sm:mt-2">مبيعات: <span className="text-green-300 font-black">{(Number(stars.second.total) || 0).toLocaleString()} ج.م</span></div>
                             </div>
                         ) : (
-                            <div className="flex flex-col items-center justify-center bg-white/5 p-2.5 sm:p-4 rounded-2xl border border-white/5 min-w-0 text-center opacity-40 text-xs font-bold text-white">
+                            <div className="flex flex-col items-center justify-center bg-gray-900 p-2.5 sm:p-4 rounded-2xl border border-white/10 min-w-0 text-center text-xs font-bold text-gray-400" style={{ backgroundColor: '#111827' }}>
                                 المركز الثاني شاغر
                             </div>
                         )}
@@ -3758,6 +3835,7 @@ const normalizeName = (name: string) => {
                     );
                 })}
             </div>
+        </div>
 
             {/* مودال تعديل البيعة */}
             {editingSale && (
@@ -4365,6 +4443,7 @@ const normalizeName = (name: string) => {
             )}
             
             {/* Hidden Print Area for Selected Sales (Phase 1) */}
+            {(selectedSalesIds.length > 0 || showCurrentTargetsModal || showTargetModal) && (
             <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
                 <div id="selected-sales-print-area" className="w-[1000px] p-8 bg-gray-900 space-y-4 rounded-3xl" style={{ direction: 'rtl' }}>
                     <div className="text-center mb-6 border-b border-white/10 pb-4">
@@ -4454,8 +4533,10 @@ const normalizeName = (name: string) => {
                     </div>
                 </div>
             </div>
+            )}
 
             {/* Dedicated High-Quality Portrait Target Image Print Container (ب الطول، واضحة، و بالكامل) */}
+            {(showCurrentTargetsModal || showPastTargetsModal || showTargetModal) && (
             <div 
                 ref={targetImageExportContainerRef}
                 id="target-image-full-render"
@@ -4609,6 +4690,7 @@ const normalizeName = (name: string) => {
                     تم استخراج هذا التقرير آلياً بواسطة نظام سوفت روز للتجارة الحديثة
                 </div>
             </div>
+            )}
 
             {/* Faqd Modal (تقرير الفقد) */}
             {showFaqdModal && (
@@ -4802,6 +4884,7 @@ const normalizeName = (name: string) => {
             )}
 
             {/* Hidden Printable Container for Faqd PDF */}
+            {showFaqdModal && (
             <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
                 <div 
                     ref={faqdPrintContainerRef} 
@@ -4932,8 +5015,10 @@ const normalizeName = (name: string) => {
                     ))}
                 </div>
             </div>
+            )}
 
             {/* Hidden Printable Container for Target PDF */}
+            {(showCurrentTargetsModal || showPastTargetsModal || showTargetModal) && (
             <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
                 <div 
                     ref={targetPdfPrintContainerRef} 
@@ -5077,6 +5162,7 @@ const normalizeName = (name: string) => {
                     })}
                 </div>
             </div>
+            )}
 
             {/* مودال الأداء (شاشة الأداء) */}
             {showPerformanceModal && (
@@ -5559,7 +5645,7 @@ const normalizeName = (name: string) => {
                     )}
                 </div>
             )}
-        </div>
+        </>
     );
 };
 
