@@ -8,7 +8,7 @@ import {
     Trash2, Edit, CalendarPlus, X, Save, History, 
     ChevronRight, ChevronLeft, CheckCircle2, AlertCircle, Calendar as CalendarIcon,
     User as UserIcon, FileSpreadsheet, Printer, Archive, RotateCcw,
-    FileDown, Loader2
+    FileDown, Loader2, Sparkles, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { exportToCSV, exportToExcel } from '../utils';
 import html2canvas from 'html2canvas';
@@ -90,6 +90,14 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
     const [isExportingFullLeavePDF, setIsExportingFullLeavePDF] = useState(false);
     const [pdfExportTime, setPdfExportTime] = useState<Date>(new Date());
     const fullHistoryPrintContainerRef = useRef<HTMLDivElement>(null);
+
+    // حالات الحافز للحسابات التي ليس لها تارجت بيع (في رصيد الإجازات والغياب)
+    const [savedIncentiveBatches, setSavedIncentiveBatches] = useState<any[]>([]);
+    const [showCoordIncentiveModal, setShowCoordIncentiveModal] = useState(false);
+    const [selectedCoordCycleKey, setSelectedCoordCycleKey] = useState<string>('');
+    const [showCoordMoreYears, setShowCoordMoreYears] = useState(false);
+    const [expandedCoordYear, setExpandedCoordYear] = useState<number | null>(null);
+    const [adminPreviewCoordEmp, setAdminPreviewCoordEmp] = useState<string>('');
 
     const getRoleTitle = (role?: string) => {
         if (!role) return 'موظف مبيعات';
@@ -307,7 +315,18 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
             }
         });
 
-        return () => { unsubUsers(); unsubBalances(); unsubHistory(); unsubRoutes(); unsubSchedules(); };
+        const unsubIncentives = onCachedValue(ref(db, 'incentives'), 'incentives', snapshot => {
+            if (snapshot.exists()) {
+                const raw = snapshot.val();
+                const list = Object.keys(raw).map(k => ({ id: k, ...raw[k] }));
+                list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                setSavedIncentiveBatches(list);
+            } else {
+                setSavedIncentiveBatches([]);
+            }
+        });
+
+        return () => { unsubUsers(); unsubBalances(); unsubHistory(); unsubRoutes(); unsubSchedules(); unsubIncentives(); };
     }, []);
 
     const getPeriodEnd = (start: Date) => {
@@ -1928,12 +1947,173 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
         }, 100);
     };
 
+    const normalizeArabicLeaveText = (str: string) => {
+        if (!str) return '';
+        return str
+            .trim()
+            .toLowerCase()
+            .replace(/[أإآ]/g, 'ا')
+            .replace(/ة/g, 'ه')
+            .replace(/ى/g, 'ي');
+    };
+
+    const coordIncentiveEmployeeNames = useMemo(() => {
+        const names = new Set<string>();
+        savedIncentiveBatches.forEach(batch => {
+            const entriesArr = Object.values(batch.entries || {}) as any[];
+            entriesArr.forEach(e => {
+                if (e && !e.hasSales && e.employeeName) {
+                    names.add(e.employeeName);
+                }
+            });
+        });
+        return Array.from(names);
+    }, [savedIncentiveBatches]);
+
+    // جلب حافز الحساب الذي ليس له تارجت بيع (لكل شخص على حدة)
+    const myCoordIncentiveRecords = useMemo(() => {
+        const targetName = user.role === 'admin'
+            ? (adminPreviewCoordEmp || coordIncentiveEmployeeNames[0] || '')
+            : (user.name || '');
+        const normMyName = normalizeArabicLeaveText(targetName);
+        const normMyUser = user.role === 'admin' ? '' : normalizeArabicLeaveText(user.username || '');
+        const myKey = user.role === 'admin' ? '' : (user.key || user.id || '');
+
+        const list: Array<{
+            batchId: string;
+            shortMonthName: string;
+            cycleLabel: string;
+            startDate: string;
+            endDate: string;
+            year: number;
+            entry: any;
+        }> = [];
+
+        savedIncentiveBatches.forEach(batch => {
+            const entriesArr = Object.values(batch.entries || {}) as any[];
+            const myEntry = entriesArr.find((e: any) => {
+                if (myKey && e.userId === myKey) return true;
+                const eName = normalizeArabicLeaveText(e.employeeName || '');
+                const eUser = normalizeArabicLeaveText(e.username || '');
+                if (normMyName && (eName === normMyName || eUser === normMyName)) return true;
+                if (normMyUser && (eName === normMyUser || eUser === normMyUser)) return true;
+                return false;
+            });
+
+            if (myEntry && !myEntry.hasSales) {
+                const startFmt = formatToDDMMYYYY(batch.startDate);
+                const endFmt = formatToDDMMYYYY(batch.endDate);
+                list.push({
+                    batchId: batch.id,
+                    shortMonthName: batch.shortMonthName || batch.monthLabel || '',
+                    cycleLabel: `${startFmt} حتى ${endFmt}`,
+                    startDate: batch.startDate,
+                    endDate: batch.endDate,
+                    year: Number(batch.year) || new Date().getFullYear(),
+                    entry: myEntry
+                });
+            }
+        });
+
+        return list;
+    }, [savedIncentiveBatches, user, adminPreviewCoordEmp, coordIncentiveEmployeeNames]);
+
+    // توليد قائمة دورات الأشهر (من 21 إلى 20 من كل شهر مثال 21/12/2026 حتى 20/1/2027 وهكذا) مع ربطها بالحافز المسجل
+    const coordMonthCyclesOptions = useMemo(() => {
+        const nowYear = new Date().getFullYear();
+        const options: Array<{
+            key: string;
+            label: string;
+            monthTitle: string;
+            year: number;
+            incentiveAmount: number | null;
+            leaveDays: number;
+            hasSavedRecord: boolean;
+        }> = [];
+
+        // أولاً: إضافة الدورات المحفوظة فعلياً للسنة الحالية
+        const addedKeys = new Set<string>();
+        myCoordIncentiveRecords
+            .filter(r => r.year === nowYear)
+            .forEach(r => {
+                addedKeys.add(r.batchId);
+                options.push({
+                    key: r.batchId,
+                    label: `من ${r.cycleLabel}`,
+                    monthTitle: r.shortMonthName || r.cycleLabel,
+                    year: r.year,
+                    incentiveAmount: Number(r.entry.finalIncentive) || 0,
+                    leaveDays: Number(r.entry.leaveDays) || 0,
+                    hasSavedRecord: true
+                });
+            });
+
+        // ثانياً: استكمال دورات الـ 12 شهراً (من 21 إلى 20 من كل شهر)
+        for (let m = 1; m <= 12; m++) {
+            const startYear = m === 1 ? nowYear - 1 : nowYear;
+            const startMonth = m === 1 ? 12 : m - 1;
+            const endYear = nowYear;
+            const endMonth = m;
+            const startISO = `${startYear}-${String(startMonth).padStart(2, '0')}-21`;
+            const endISO = `${endYear}-${String(endMonth).padStart(2, '0')}-20`;
+            const cycleId = `${startISO}_${endISO}`;
+            if (!addedKeys.has(cycleId)) {
+                const cycleText = `21/${startMonth}/${startYear} حتى 20/${endMonth}/${endYear}`;
+                const dObj = new Date(endYear, endMonth - 1, 1);
+                const mName = dObj.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' });
+                options.push({
+                    key: cycleId,
+                    label: `${cycleText} (${mName})`,
+                    monthTitle: `${mName} (${cycleText})`,
+                    year: nowYear,
+                    incentiveAmount: null,
+                    leaveDays: 0,
+                    hasSavedRecord: false
+                });
+            }
+        }
+
+        return options;
+    }, [myCoordIncentiveRecords]);
+
+    // السنوات السابقة أو عند مرور سنة (لإظهار زر المزيد في الأسفل)
+    const coordArchivedYearsMap = useMemo(() => {
+        const nowYear = new Date().getFullYear();
+        const map = new Map<number, typeof myCoordIncentiveRecords>();
+        myCoordIncentiveRecords.forEach(r => {
+            if (r.year < nowYear || myCoordIncentiveRecords.length >= 12) {
+                const arr = map.get(r.year) || [];
+                arr.push(r);
+                map.set(r.year, arr);
+            }
+        });
+        return map;
+    }, [myCoordIncentiveRecords]);
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <h2 className="text-2xl font-bold flex items-center gap-2 text-white">
-                    <History className="text-blue-500" /> رصيد الإجازات والغياب
-                </h2>
+                <div className="flex items-center justify-between w-full md:w-auto gap-3">
+                    <h2 className="text-2xl font-bold flex items-center gap-2 text-white">
+                        <History className="text-blue-500" /> رصيد الإجازات والغياب
+                    </h2>
+                    {myCoordIncentiveRecords.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (!selectedCoordCycleKey && coordMonthCyclesOptions[0]) {
+                                    setSelectedCoordCycleKey(coordMonthCyclesOptions[0].key);
+                                }
+                                setShowCoordIncentiveModal(true);
+                            }}
+                            className="bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-gray-950 font-black px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 text-xs sm:text-sm shadow-lg transition active:scale-95 cursor-pointer mr-auto md:mr-2"
+                            title="عرض الحافز الشهري"
+                        >
+                            <Sparkles size={15} className="shrink-0" />
+                            <span>الحافز</span>
+                        </button>
+                    )}
+                </div>
                 {user.role === 'admin' && (
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
                         <select 
@@ -4535,6 +4715,167 @@ const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
                             </div>
                         );
                     })()}
+                </div>
+            )}
+
+            {/* شاشة الحافز بعرض الهاتف للحسابات التي ليس لها تارجت بيع (منسق) */}
+            {showCoordIncentiveModal && (
+                <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+                    <div className="bg-gray-900 border border-white/20 w-full max-w-lg rounded-3xl p-4 sm:p-6 shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[92vh] my-auto overflow-hidden text-right">
+                        <div className="flex justify-between items-center pb-3 border-b border-white/10 shrink-0">
+                            <div className="flex items-center gap-2">
+                                <Sparkles className="text-amber-400" size={22} />
+                                <h3 className="font-black text-base sm:text-xl text-white">
+                                    الحافز الشهري - {user.role === 'admin' ? (adminPreviewCoordEmp || coordIncentiveEmployeeNames[0] || user.name) : user.name}
+                                </h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowCoordIncentiveModal(false)}
+                                className="text-white/60 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition cursor-pointer"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {user.role === 'admin' && coordIncentiveEmployeeNames.length > 1 && (
+                            <div className="mt-2.5">
+                                <select
+                                    value={adminPreviewCoordEmp || coordIncentiveEmployeeNames[0] || ''}
+                                    onChange={e => {
+                                        setAdminPreviewCoordEmp(e.target.value);
+                                        setSelectedCoordCycleKey('');
+                                    }}
+                                    className="w-full p-2.5 rounded-xl bg-gray-800 text-white border border-white/15 text-xs font-bold outline-none"
+                                >
+                                    {coordIncentiveEmployeeNames.map(name => (
+                                        <option key={name} value={name}>{name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+
+                        {/* قائمة منسدلة لاختيار الشهر (من 21 إلى 20 من كل شهر) */}
+                        <div className="mt-3">
+                            <label className="block text-xs font-bold text-gray-300 mb-1.5 flex items-center gap-1.5">
+                                <CalendarIcon size={14} className="text-amber-400" />
+                                <span>اختر الشهر (من 21 إلى 20 من كل شهر):</span>
+                            </label>
+                            <select
+                                value={selectedCoordCycleKey || (coordMonthCyclesOptions[0]?.key ?? '')}
+                                onChange={e => setSelectedCoordCycleKey(e.target.value)}
+                                className="w-full p-3 rounded-2xl bg-gray-800 text-white border border-white/15 text-xs sm:text-sm font-bold outline-none focus:border-amber-400 cursor-pointer"
+                            >
+                                {coordMonthCyclesOptions.map(opt => (
+                                    <option key={opt.key} value={opt.key}>
+                                        {opt.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* عرض الشهر المختار وأمامه الحافز */}
+                        {(() => {
+                            const activeKey = selectedCoordCycleKey || (coordMonthCyclesOptions[0]?.key ?? '');
+                            const selectedOpt = coordMonthCyclesOptions.find(o => o.key === activeKey) || coordMonthCyclesOptions[0];
+                            if (!selectedOpt) return null;
+                            return (
+                                <div className="mt-4 bg-gray-800/90 border border-amber-500/30 rounded-2xl p-4 space-y-2">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <CalendarIcon size={17} className="text-amber-400 shrink-0" />
+                                            <span className="font-black text-xs sm:text-sm text-white truncate">{selectedOpt.monthTitle}</span>
+                                        </div>
+                                        <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-3.5 py-1.5 rounded-xl font-black text-sm shrink-0">
+                                            {selectedOpt.hasSavedRecord && selectedOpt.incentiveAmount !== null
+                                                ? `${selectedOpt.incentiveAmount.toLocaleString()} ج.م`
+                                                : 'لم يسجل بعد'}
+                                        </span>
+                                    </div>
+                                    {selectedOpt.hasSavedRecord && (
+                                        <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs text-gray-300 font-bold">
+                                            <span>الإجازات المسجلة: <strong className="text-amber-300">{selectedOpt.leaveDays} يوم</strong></span>
+                                            <span>الصفة: <strong className="text-cyan-300">منسق</strong></span>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
+
+                        {/* عند مرور سنة يظهر زر في الأسفل باسم المزيد وعند الضغط عليه يظهر السنة وعند الضغط عليها يظهر الأشهر والحافز ويظهر سهم لرفع القائمة مرة أخرى */}
+                        {coordArchivedYearsMap.size > 0 && (
+                            <div className="mt-4 pt-3 border-t border-white/10 flex-1 overflow-y-auto custom-scrollbar">
+                                {!showCoordMoreYears ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowCoordMoreYears(true)}
+                                        className="w-full py-2.5 px-4 rounded-2xl bg-gray-800 hover:bg-gray-700 text-amber-300 border border-amber-500/30 font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer"
+                                    >
+                                        <span>المزيد</span>
+                                        <ChevronDown size={16} />
+                                    </button>
+                                ) : (
+                                    <div className="space-y-2.5">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-black text-amber-300">سجل السنوات:</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowCoordMoreYears(false);
+                                                    setExpandedCoordYear(null);
+                                                }}
+                                                className="p-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-white/80 hover:text-white flex items-center gap-1 text-xs font-bold transition cursor-pointer"
+                                                title="رفع القائمة مرة أخرى"
+                                            >
+                                                <ChevronUp size={16} />
+                                                <span>رفع القائمة</span>
+                                            </button>
+                                        </div>
+
+                                        {Array.from(coordArchivedYearsMap.entries()).map(([yr, records]) => {
+                                            const isYrOpen = expandedCoordYear === yr;
+                                            return (
+                                                <div key={yr} className="bg-gray-800/70 border border-white/10 rounded-2xl overflow-hidden">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setExpandedCoordYear(isYrOpen ? null : yr)}
+                                                        className="w-full p-3 flex items-center justify-between hover:bg-white/5 transition cursor-pointer"
+                                                    >
+                                                        <span className="font-black text-sm text-white">سنة {yr}</span>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs text-amber-300 font-bold">{records.length} شهر</span>
+                                                            {isYrOpen ? <ChevronUp size={16} className="text-amber-400" /> : <ChevronDown size={16} className="text-white/60" />}
+                                                        </div>
+                                                    </button>
+
+                                                    {isYrOpen && (
+                                                        <div className="p-3 border-t border-white/10 bg-gray-950/60 space-y-2">
+                                                            {records.map(rec => (
+                                                                <div key={rec.batchId} className="flex items-center justify-between bg-gray-900 p-2.5 rounded-xl border border-white/5 text-xs font-bold">
+                                                                    <span className="text-white">من {rec.cycleLabel}</span>
+                                                                    <span className="text-emerald-300 font-black">
+                                                                        {(Number(rec.entry.finalIncentive) || 0).toLocaleString()} ج.م
+                                                                    </span>
+                                                                </div>
+                                                            ))}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setExpandedCoordYear(null)}
+                                                                className="w-full pt-1.5 text-center text-amber-300 hover:text-amber-200 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer"
+                                                            >
+                                                                <ChevronUp size={15} />
+                                                                <span>رفع القائمة</span>
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
         </div>

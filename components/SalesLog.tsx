@@ -289,6 +289,55 @@ const SalesLog: React.FC<Props> = ({ user, markets, theme, products, highlightSa
     const targetImageExportContainerRef = React.useRef<HTMLDivElement>(null);
     const [isExportingTargetImage, setIsExportingTargetImage] = useState(false);
 
+    // حالات الحافز وسجل الحافز
+    const [showIncentiveModal, setShowIncentiveModal] = useState(false);
+    const [showIncentiveLogModal, setShowIncentiveLogModal] = useState(false);
+    const [showUserIncentiveModal, setShowUserIncentiveModal] = useState(false);
+    const [incentiveStartDate, setIncentiveStartDate] = useState<string>(() => {
+        const now = new Date();
+        const start = now.getDate() >= 21
+            ? new Date(now.getFullYear(), now.getMonth(), 21)
+            : new Date(now.getFullYear(), now.getMonth() - 1, 21);
+        const y = start.getFullYear();
+        const m = String(start.getMonth() + 1).padStart(2, '0');
+        const d = String(start.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    });
+    const [incentiveEndDate, setIncentiveEndDate] = useState<string>(() => {
+        const now = new Date();
+        const end = now.getDate() >= 21
+            ? new Date(now.getFullYear(), now.getMonth() + 1, 20)
+            : new Date(now.getFullYear(), now.getMonth(), 20);
+        const y = end.getFullYear();
+        const m = String(end.getMonth() + 1).padStart(2, '0');
+        const d = String(end.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    });
+    const [manualIncentiveEdits, setManualIncentiveEdits] = useState<Record<string, number>>({});
+    const [savedIncentiveBatches, setSavedIncentiveBatches] = useState<any[]>([]);
+    const [expandedIncentiveLogMonth, setExpandedIncentiveLogMonth] = useState<string | null>(null);
+    const [expandedUserIncentiveMonth, setExpandedUserIncentiveMonth] = useState<string | null>(null);
+    const [incentivePdfExportMode, setIncentivePdfExportMode] = useState<'all' | 'specific'>('all');
+    const [selectedIncentivePdfUsers, setSelectedIncentivePdfUsers] = useState<string[]>([]);
+    const [incentivePdfBatchId, setIncentivePdfBatchId] = useState<string>('');
+    const [isExportingIncentivePDF, setIsExportingIncentivePDF] = useState(false);
+    const incentivePdfPrintRef = React.useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const incentivesRef = ref(db, 'incentives');
+        const unsubIncentives = onCachedValue(incentivesRef, 'incentives', (snap) => {
+            if (snap.exists()) {
+                const raw = snap.val();
+                const list = Object.keys(raw).map(k => ({ id: k, ...raw[k] }));
+                list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                setSavedIncentiveBatches(list);
+            } else {
+                setSavedIncentiveBatches([]);
+            }
+        });
+        return () => unsubIncentives();
+    }, []);
+
     useEffect(() => {
         const leavesRef = ref(db, 'leave_history');
         const unsubLeaves = onCachedValue(leavesRef, 'leave_history', (snap) => {
@@ -3288,6 +3337,338 @@ const normalizeName = (name: string) => {
     };
 
 
+    // منطق حساب الحافز للموظفين الـ 16 النشطين (قابل للزيادة при تسجيل حساب جديد وللنقصان عند أرشفة أو حذف حساب)
+    const formatIncentiveDateDMY = (dateStr: string) => {
+        if (!dateStr) return '';
+        const parts = dateStr.split(/[-/]/);
+        if (parts.length === 3) {
+            if (parts[0].length === 4) {
+                return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`;
+            }
+            return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[2]}`;
+        }
+        return dateStr;
+    };
+
+    const activeIncentiveEmployees = useMemo(() => {
+        return usersList.filter(u =>
+            !u.isArchived &&
+            u.role !== 'admin' &&
+            u.name !== 'المدير العام' &&
+            u.name !== 'Mr. Khaled attef' &&
+            !(u.name && u.name.includes('@'))
+        );
+    }, [usersList]);
+
+    // إعادة تعيين التعديلات اليدوية عند تغيير الفترة التاريخية المختارة
+    useEffect(() => {
+        setManualIncentiveEdits({});
+    }, [incentiveStartDate, incentiveEndDate]);
+
+    const computedIncentiveRows = useMemo(() => {
+        const start = incentiveStartDate <= incentiveEndDate ? incentiveStartDate : incentiveEndDate;
+        const end = incentiveStartDate <= incentiveEndDate ? incentiveEndDate : incentiveStartDate;
+
+        return activeIncentiveEmployees.map(emp => {
+            const empKey = emp.key || emp.username || emp.name;
+            const normName = normalizeArabicText(emp.name || '');
+            const normUser = normalizeArabicText(emp.username || '');
+
+            // 1. اللاين الأول: إجمالي عدد الإجازات المسجلة في الفترة المختارة (إجمالي وليس مصنف سنوي أو عارضة)
+            let totalLeaveDays = 0;
+            leaveHistory.forEach(l => {
+                if (l.type === 'official') return; // استثناء الإجازات الرسمية العامة
+                const matchId = l.userId && (l.userId === emp.key || l.userId === emp.id);
+                const matchName = l.employeeName && (
+                    normalizeArabicText(l.employeeName) === normName ||
+                    (normUser && normalizeArabicText(l.employeeName) === normUser)
+                );
+                if (!matchId && !matchName) return;
+
+                let lDateStr = '';
+                if (l.date && typeof l.date === 'string') {
+                    const clean = l.date.trim();
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
+                        lDateStr = clean;
+                    } else {
+                        const parts = clean.split(/[-/]/);
+                        if (parts.length === 3) {
+                            if (parts[0].length === 4) lDateStr = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+                            else if (parts[2].length === 4) lDateStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                        }
+                    }
+                } else if (l.timestamp) {
+                    const d = new Date(Number(l.timestamp));
+                    if (!isNaN(d.getTime())) {
+                        lDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                    }
+                }
+
+                if (lDateStr && lDateStr >= start && lDateStr <= end) {
+                    totalLeaveDays += Number(l.days) || 1;
+                }
+            });
+
+            // 2. اللاين الثاني: التارجت (يظهر أمام الحسابات المسجلة مبيعات فقط، وأمام أي حساب آخر ليس له مبيعات مسجلة باسمه كلمة "منسق")
+            const empAllSales = allCompanySales.filter(s => {
+                const sEmp = normalizeArabicText(s.employeeName || '');
+                const sUsr = normalizeArabicText(s.username || '');
+                return (normName && (sEmp === normName || sUsr === normName)) ||
+                       (normUser && (sEmp === normUser || sUsr === normUser));
+            });
+
+            const hasRegisteredSales = empAllSales.length > 0;
+
+            let achievedAmount = 0;
+            let targetAmount = 0;
+            let achievedPercent = 0;
+
+            if (hasRegisteredSales) {
+                const periodSales = empAllSales.filter(s => {
+                    const dStr = getSaleISODate(s);
+                    return dStr && dStr >= start && dStr <= end;
+                });
+                achievedAmount = periodSales.reduce((acc, s) => acc + (Number(s.total) || 0), 0);
+
+                // البحث عن التارجت الخاص بالموظف (دون تغيير أي رقم في التارجت نهائياً)
+                const endMonthStr = end.slice(0, 7);
+                const startMonthStr = start.slice(0, 7);
+                const targetObj = targetsList.find(t => {
+                    const tName = normalizeArabicText(t.employeeName || '');
+                    return (t.userId && t.userId === emp.key) || (normName && tName === normName) || (normUser && tName === normUser);
+                });
+                const histObj = archiveData.find(a => {
+                    const aName = normalizeArabicText(a.employeeName || '');
+                    const matchEmp = (a.userId && a.userId === emp.key) || (normName && aName === normName) || (normUser && aName === normUser);
+                    return matchEmp && (a.month === endMonthStr || a.month === startMonthStr);
+                });
+
+                if (targetObj && Number(targetObj.finalTarget || targetObj.targetAmount || 0) > 0) {
+                    targetAmount = Number(targetObj.finalTarget || targetObj.targetAmount || 0);
+                } else if (histObj && Number(histObj.targetAmount || 0) > 0) {
+                    targetAmount = Number(histObj.targetAmount || 0);
+                }
+
+                // إذا لم تكن هناك مبيعات في الفترة المحددة ولكن للموظف مبيعات في الشهر الحالي ضمن التارجت
+                if (achievedAmount === 0 && targetObj && Number(targetObj.achieved || 0) > 0) {
+                    achievedAmount = Number(targetObj.achieved || 0);
+                }
+
+                if (targetAmount > 0) {
+                    achievedPercent = Math.round(((achievedAmount / targetAmount) * 100) * 10) / 10;
+                } else if (achievedAmount > 0) {
+                    achievedPercent = 100;
+                }
+            }
+
+            // 3. اللاين الثالث: الحافز (القيمة الأساسية 2000 جنيه، كل يوم غياب بـ 50 جنيه، وللمبيعات تضرب 2000 في نسبة التارجت ثم يخصم الغياب)
+            const baseIncentive = 2000;
+            const leaveDeduction = totalLeaveDays * 50;
+            let calculatedIncentive = 0;
+
+            if (hasRegisteredSales && targetAmount > 0) {
+                const targetScaledBase = Math.round(baseIncentive * (achievedPercent / 100));
+                calculatedIncentive = Math.max(0, targetScaledBase - leaveDeduction);
+            } else {
+                calculatedIncentive = Math.max(0, baseIncentive - leaveDeduction);
+            }
+
+            const finalIncentive = manualIncentiveEdits[empKey] !== undefined
+                ? manualIncentiveEdits[empKey]
+                : calculatedIncentive;
+
+            return {
+                userId: empKey,
+                username: emp.username || '',
+                employeeName: emp.name || emp.username || 'موظف',
+                leaveDays: totalLeaveDays,
+                hasSales: hasRegisteredSales,
+                roleLabel: hasRegisteredSales ? 'مبيعات' : 'منسق',
+                targetAmount,
+                achievedAmount,
+                achievedPercent,
+                calculatedIncentive,
+                finalIncentive
+            };
+        });
+    }, [activeIncentiveEmployees, leaveHistory, allCompanySales, targetsList, archiveData, incentiveStartDate, incentiveEndDate, manualIncentiveEdits]);
+
+    const handleSaveIncentives = async () => {
+        if (!incentiveStartDate || !incentiveEndDate) {
+            alert('يرجى تحديد الفترة من وإلى');
+            return;
+        }
+        const start = incentiveStartDate <= incentiveEndDate ? incentiveStartDate : incentiveEndDate;
+        const end = incentiveStartDate <= incentiveEndDate ? incentiveEndDate : incentiveStartDate;
+        const endDateObj = new Date(end);
+        const year = !isNaN(endDateObj.getTime()) ? endDateObj.getFullYear() : new Date().getFullYear();
+        const shortMonthName = !isNaN(endDateObj.getTime())
+            ? endDateObj.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })
+            : `${start} - ${end}`;
+        const cycleLabel = `${formatIncentiveDateDMY(start)} حتى ${formatIncentiveDateDMY(end)}`;
+        const batchId = `${start}_${end}`;
+
+        const entriesMap: Record<string, any> = {};
+        computedIncentiveRows.forEach(row => {
+            entriesMap[row.userId] = {
+                userId: row.userId,
+                username: row.username,
+                employeeName: row.employeeName,
+                leaveDays: row.leaveDays,
+                hasSales: row.hasSales,
+                roleLabel: row.roleLabel,
+                targetAmount: row.targetAmount,
+                achievedAmount: row.achievedAmount,
+                achievedPercent: row.achievedPercent,
+                calculatedIncentive: row.calculatedIncentive,
+                finalIncentive: Number(row.finalIncentive) || 0
+            };
+        });
+
+        try {
+            await set(ref(db, `incentives/${batchId}`), {
+                id: batchId,
+                shortMonthName,
+                cycleLabel,
+                monthLabel: `${shortMonthName} (${cycleLabel})`,
+                year,
+                startDate: start,
+                endDate: end,
+                timestamp: Date.now(),
+                entries: entriesMap
+            });
+            setExpandedIncentiveLogMonth(batchId);
+            setIncentivePdfBatchId(batchId);
+            alert('تم حفظ الحافز بنجاح');
+        } catch (err: any) {
+            console.error('Error saving incentives:', err);
+            alert('حدث خطأ أثناء حفظ الحافز');
+        }
+    };
+
+    const handleExportIncentivePDF = async (batchIdToExport?: string) => {
+        const targetBatchId = batchIdToExport || incentivePdfBatchId || (savedIncentiveBatches[0]?.id ?? '');
+        const batch = savedIncentiveBatches.find(b => b.id === targetBatchId);
+        if (!batch) {
+            alert('يرجى اختيار الشهر أولاً لتصدير PDF');
+            return;
+        }
+        if (incentivePdfExportMode === 'specific' && selectedIncentivePdfUsers.length === 0) {
+            alert('يرجى تحديد حساب واحد على الأقل للتصدير');
+            return;
+        }
+
+        setIncentivePdfBatchId(targetBatchId);
+        setIsExportingIncentivePDF(true);
+        try {
+            await new Promise(r => setTimeout(r, 150));
+            const container = incentivePdfPrintRef.current;
+            if (!container) return;
+
+            container.style.display = 'block';
+            container.style.position = 'fixed';
+            container.style.top = '0px';
+            container.style.left = '0px';
+            container.style.zIndex = '99999';
+            container.style.width = '1050px';
+
+            await new Promise(r => setTimeout(r, 200));
+
+            const canvas = await html2canvas(container, {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                logging: false,
+                width: container.offsetWidth || 1050,
+                height: container.offsetHeight,
+                windowWidth: 1150
+            });
+
+            container.style.display = 'none';
+            container.style.position = '';
+
+            const imgData = canvas.toDataURL('image/jpeg', 0.98);
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfPageHeight = pdf.internal.pageSize.getHeight();
+            const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+
+            pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, Math.min(pdfPageHeight, imgHeight));
+            const fileName = `تقرير_الحافز_${batch.startDate}_إلى_${batch.endDate}.pdf`;
+            pdf.save(fileName);
+        } catch (err) {
+            console.error('Incentive PDF export error:', err);
+            alert('حدث خطأ أثناء تصدير ملف PDF');
+        } finally {
+            if (incentivePdfPrintRef.current) {
+                incentivePdfPrintRef.current.style.display = 'none';
+            }
+            setIsExportingIncentivePDF(false);
+        }
+    };
+
+    const [adminPreviewSalesEmp, setAdminPreviewSalesEmp] = useState<string>('');
+
+    const salesIncentiveEmployeeNames = useMemo(() => {
+        const names = new Set<string>();
+        savedIncentiveBatches.forEach(batch => {
+            const entriesArr = Object.values(batch.entries || {}) as any[];
+            entriesArr.forEach(e => {
+                if (e && e.hasSales && e.employeeName) {
+                    names.add(e.employeeName);
+                }
+            });
+        });
+        return Array.from(names);
+    }, [savedIncentiveBatches]);
+
+    // جلب حافز المستخدم المسجل دخوله فقط (لكل شخص على حدة بمعنى حافز أسماء يظهر لأسماء ولا يظهر لجميع الحسابات)
+    const currentUserIncentiveMonths = useMemo(() => {
+        const targetNameForView = user.role === 'admin'
+            ? (adminPreviewSalesEmp || salesIncentiveEmployeeNames[0] || '')
+            : (user.name || '');
+        const normMyName = normalizeArabicText(targetNameForView);
+        const normMyUser = user.role === 'admin' ? '' : normalizeArabicText(user.username || '');
+        const myKey = user.role === 'admin' ? '' : (user.key || user.id || '');
+
+        const list: Array<{
+            batchId: string;
+            shortMonthName: string;
+            cycleLabel: string;
+            startDate: string;
+            endDate: string;
+            year: number;
+            entry: any;
+        }> = [];
+
+        savedIncentiveBatches.forEach(batch => {
+            const entriesObj = batch.entries || {};
+            const entriesArr = Object.values(entriesObj) as any[];
+            const myEntry = entriesArr.find((e: any) => {
+                if (myKey && e.userId === myKey) return true;
+                const eName = normalizeArabicText(e.employeeName || '');
+                const eUser = normalizeArabicText(e.username || '');
+                if (normMyName && (eName === normMyName || eUser === normMyName)) return true;
+                if (normMyUser && (eName === normMyUser || eUser === normMyUser)) return true;
+                return false;
+            });
+
+            if (myEntry && myEntry.hasSales) {
+                list.push({
+                    batchId: batch.id,
+                    shortMonthName: batch.shortMonthName || batch.monthLabel || '',
+                    cycleLabel: batch.cycleLabel || `${formatIncentiveDateDMY(batch.startDate)} حتى ${formatIncentiveDateDMY(batch.endDate)}`,
+                    startDate: batch.startDate,
+                    endDate: batch.endDate,
+                    year: batch.year || new Date().getFullYear(),
+                    entry: myEntry
+                });
+            }
+        });
+
+        return list;
+    }, [savedIncentiveBatches, user, adminPreviewSalesEmp, salesIncentiveEmployeeNames]);
+
     const isAnySalesModalOpen = Boolean(
         editingSale ||
         showTargetModal ||
@@ -3298,14 +3679,34 @@ const normalizeName = (name: string) => {
         showCurrentTargetsModal ||
         showPastTargetsModal ||
         showFaqdModal ||
-        showPerformanceModal
+        showPerformanceModal ||
+        showIncentiveModal ||
+        showIncentiveLogModal ||
+        showUserIncentiveModal
     );
 
     return (
         <>
         <div className={isAnySalesModalOpen ? 'hidden' : 'space-y-6'}>
             <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 relative z-40">
-                <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2 text-white shrink-0"><FileSpreadsheet /> سجل المبيعات</h2>
+                <div className="flex items-center justify-between sm:justify-start gap-3">
+                    <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2 text-white shrink-0"><FileSpreadsheet /> سجل المبيعات</h2>
+                    {currentUserIncentiveMonths.length > 0 && (
+                        <button
+                            onClick={() => {
+                                if (!expandedUserIncentiveMonth && currentUserIncentiveMonths[0]) {
+                                    setExpandedUserIncentiveMonth(currentUserIncentiveMonths[0].batchId);
+                                }
+                                setShowUserIncentiveModal(true);
+                            }}
+                            className="bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-gray-950 font-black px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 text-xs sm:text-sm shadow-lg transition active:scale-95 cursor-pointer mr-auto sm:mr-2"
+                            title="عرض الحافز الخاص بك"
+                        >
+                            <Sparkles size={15} className="shrink-0" />
+                            <span>الحافز</span>
+                        </button>
+                    )}
+                </div>
                 {user.role === 'admin' && (
                     <div className="grid grid-cols-3 gap-1.5 sm:flex sm:items-center sm:gap-2 w-full sm:w-auto">
                         <button 
@@ -3397,6 +3798,12 @@ const normalizeName = (name: string) => {
                                         className="w-full text-right px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-600/30 flex items-center gap-2 transition"
                                     >
                                         <Trophy size={16} className="text-orange-400"/> تارجت الشهر
+                                    </button>
+                                    <button 
+                                        onClick={() => { setShowTargetDropdown(false); setShowIncentiveModal(true); }}
+                                        className="w-full text-right px-4 py-2.5 text-sm font-bold text-white hover:bg-amber-600/30 flex items-center gap-2 transition border-t border-white/10 cursor-pointer"
+                                    >
+                                        <Sparkles size={16} className="text-amber-400"/> الحافز
                                     </button>
                                 </div>
                             )}
@@ -5645,6 +6052,453 @@ const normalizeName = (name: string) => {
                     )}
                 </div>
             )}
+
+            {/* مودال إدارة واحتساب الحافز (للإدارة) */}
+            {showIncentiveModal && (
+                <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-5 overflow-y-auto">
+                    <div className="bg-gray-900 border border-white/20 w-full max-w-3xl rounded-3xl p-4 sm:p-6 shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[94vh] my-auto overflow-hidden text-right">
+                        {/* Header: كلمة الحافز وبجانبها زر سجل الحافز يظهر فوراً عند الحفظ */}
+                        <div className="flex justify-between items-center pb-3 sm:pb-4 border-b border-white/10 shrink-0">
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                                <Sparkles className="text-amber-400 shrink-0" size={24} />
+                                <h3 className="font-black text-lg sm:text-2xl text-white">الحافز</h3>
+                                {savedIncentiveBatches.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (!expandedIncentiveLogMonth && savedIncentiveBatches[0]) {
+                                                setExpandedIncentiveLogMonth(savedIncentiveBatches[0].id);
+                                                setIncentivePdfBatchId(savedIncentiveBatches[0].id);
+                                            }
+                                            setShowIncentiveLogModal(true);
+                                        }}
+                                        className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5 transition cursor-pointer shadow"
+                                    >
+                                        <History size={15} className="text-amber-400" />
+                                        <span>سجل الحافز</span>
+                                    </button>
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowIncentiveModal(false)}
+                                className="text-white/60 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition cursor-pointer"
+                            >
+                                <X size={22} />
+                            </button>
+                        </div>
+
+                        {/* تحديد تاريخ معين من وإلى */}
+                        <div className="grid grid-cols-2 gap-2.5 sm:gap-4 my-3 bg-gray-800/80 p-3 rounded-2xl border border-white/10 shrink-0">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-300 mb-1 flex items-center gap-1">
+                                    <Calendar size={13} className="text-amber-400" />
+                                    <span>من تاريخ:</span>
+                                </label>
+                                <input
+                                    type="date"
+                                    value={incentiveStartDate}
+                                    onChange={e => setIncentiveStartDate(e.target.value)}
+                                    className="w-full p-2 rounded-xl bg-gray-900 text-white border border-white/15 text-xs sm:text-sm font-bold outline-none focus:border-amber-400"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-300 mb-1 flex items-center gap-1">
+                                    <Calendar size={13} className="text-amber-400" />
+                                    <span>إلى تاريخ:</span>
+                                </label>
+                                <input
+                                    type="date"
+                                    value={incentiveEndDate}
+                                    onChange={e => setIncentiveEndDate(e.target.value)}
+                                    className="w-full p-2 rounded-xl bg-gray-900 text-white border border-white/15 text-xs sm:text-sm font-bold outline-none focus:border-amber-400"
+                                />
+                            </div>
+                        </div>
+
+                        {/* قائمة الموظفين الـ 16 (قابلة للزيادة أو النقصان تلقائياً) وأمام كل موظف 3 لاين */}
+                        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2.5 pr-1 pl-1">
+                            {computedIncentiveRows.map((row, idx) => (
+                                <div
+                                    key={row.userId}
+                                    className="bg-gray-800/70 hover:bg-gray-800 border border-white/10 rounded-2xl p-3 sm:p-4 transition space-y-2"
+                                >
+                                    <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className="w-6 h-6 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-black flex items-center justify-center">
+                                                {idx + 1}
+                                            </span>
+                                            <span className="font-black text-sm sm:text-base text-white">{row.employeeName}</span>
+                                        </div>
+                                        <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-lg border ${row.hasSales ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'}`}>
+                                            {row.hasSales ? 'مبيعات' : 'منسق'}
+                                        </span>
+                                    </div>
+
+                                    {/* 3 لاين أمام كل موظف */}
+                                    <div className="space-y-1.5 text-xs sm:text-sm">
+                                        {/* اللاين الأول: عدد الإجازات إجمالي في الفترة المختارة */}
+                                        <div className="flex items-center justify-between bg-gray-900/60 px-3 py-2 rounded-xl border border-white/5">
+                                            <span className="text-gray-300 font-bold">1. عدد الإجازات (إجمالي الفترة):</span>
+                                            <span className="font-black text-amber-300">
+                                                {row.leaveDays} يوم {row.leaveDays > 0 ? `(خصم ${row.leaveDays * 50} ج.م)` : ''}
+                                            </span>
+                                        </div>
+
+                                        {/* اللاين الثاني: التارجت للمبيعات فقط، أو كلمة منسق */}
+                                        <div className="flex items-center justify-between bg-gray-900/60 px-3 py-2 rounded-xl border border-white/5">
+                                            <span className="text-gray-300 font-bold">2. التارجت:</span>
+                                            {row.hasSales ? (
+                                                <div className="flex flex-wrap items-center gap-2 font-black text-white text-left">
+                                                    <span className="text-purple-300">التارجت: {row.targetAmount.toLocaleString()} ج.م</span>
+                                                    <span className="text-white/40">|</span>
+                                                    <span className="text-blue-300">المحقق: {row.achievedAmount.toLocaleString()} ج.م</span>
+                                                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs">
+                                                        {row.achievedPercent}%
+                                                    </span>
+                                                </div>
+                                            ) : (
+                                                <span className="font-black text-cyan-300 bg-cyan-500/15 px-3 py-0.5 rounded-lg border border-cyan-500/30">
+                                                    منسق
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {/* اللاين الثالث: الحافز (قابل للتعديل بدون أي تغيير في أرقام التارجت نهائياً) */}
+                                        <div className="flex items-center justify-between bg-emerald-950/30 px-3 py-2 rounded-xl border border-emerald-500/30">
+                                            <div className="flex flex-col">
+                                                <span className="text-emerald-300 font-black">3. الحافز:</span>
+                                                <span className="text-[10px] text-white/50">
+                                                    {row.hasSales && row.targetAmount > 0
+                                                        ? `أساسي 2000 × ${row.achievedPercent}% = ${Math.round(2000 * (row.achievedPercent / 100))} ج.م - غياب (${row.leaveDays * 50} ج.م)`
+                                                        : `أساسي 2000 ج.م - غياب (${row.leaveDays * 50} ج.م)`}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5">
+                                                <input
+                                                    type="number"
+                                                    value={row.finalIncentive}
+                                                    onChange={e => {
+                                                        const val = Number(e.target.value);
+                                                        setManualIncentiveEdits(prev => ({
+                                                            ...prev,
+                                                            [row.userId]: isNaN(val) ? 0 : val
+                                                        }));
+                                                    }}
+                                                    className="w-28 sm:w-32 px-2.5 py-1.5 rounded-xl bg-gray-900 text-emerald-300 font-black text-center border border-emerald-500/40 focus:border-emerald-400 outline-none text-sm"
+                                                />
+                                                <span className="text-xs font-bold text-emerald-400">ج.م</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* زر حفظ في الأسفل */}
+                        <div className="pt-3 mt-3 border-t border-white/10 flex items-center justify-between gap-3 shrink-0">
+                            <div className="text-xs text-gray-400 font-bold">
+                                إجمالي الموظفين النشطين: <span className="text-white font-black">{computedIncentiveRows.length}</span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleSaveIncentives}
+                                className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-500 text-white font-black py-2.5 px-8 rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-sm"
+                            >
+                                <Save size={18} />
+                                <span>حفظ</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* مودال سجل الحافز وتصدير PDF للحسابات جميعاً أو لحسابات محددة */}
+            {showIncentiveLogModal && (
+                <div className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-5 overflow-y-auto">
+                    <div className="bg-gray-900 border border-white/20 w-full max-w-3xl rounded-3xl p-4 sm:p-6 shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[94vh] my-auto overflow-hidden text-right">
+                        <div className="flex justify-between items-center pb-3 border-b border-white/10 shrink-0">
+                            <div className="flex items-center gap-2">
+                                <History className="text-amber-400" size={22} />
+                                <h3 className="font-black text-lg sm:text-xl text-white">سجل الحافز المحفوظ</h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowIncentiveLogModal(false)}
+                                className="text-white/60 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition cursor-pointer"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* إعدادات تصدير PDF (للحسابات جميعاً أو لحسابات محددة) */}
+                        <div className="bg-gray-800/80 border border-white/10 rounded-2xl p-3 my-3 space-y-2.5 shrink-0">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-white">
+                                    <span>تصدير PDF:</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIncentivePdfExportMode('all')}
+                                        className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${incentivePdfExportMode === 'all' ? 'bg-amber-500 text-gray-950 font-black' : 'bg-gray-700 text-gray-300'}`}
+                                    >
+                                        للحسابات جميعاً
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIncentivePdfExportMode('specific')}
+                                        className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${incentivePdfExportMode === 'specific' ? 'bg-amber-500 text-gray-950 font-black' : 'bg-gray-700 text-gray-300'}`}
+                                    >
+                                        لحسابات محددة
+                                    </button>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    disabled={isExportingIncentivePDF}
+                                    onClick={() => handleExportIncentivePDF(expandedIncentiveLogMonth || savedIncentiveBatches[0]?.id)}
+                                    className="bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-black px-4 py-1.5 rounded-xl text-xs sm:text-sm flex items-center gap-1.5 shadow transition cursor-pointer"
+                                >
+                                    <FileDown size={16} />
+                                    <span>{isExportingIncentivePDF ? 'جاري التصدير...' : 'تصدير PDF'}</span>
+                                </button>
+                            </div>
+
+                            {incentivePdfExportMode === 'specific' && (
+                                <div className="pt-2 border-t border-white/10">
+                                    <div className="text-[11px] text-gray-300 font-bold mb-1.5">اختر الحسابات المراد تصديرها:</div>
+                                    <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1">
+                                        {activeIncentiveEmployees.map(emp => {
+                                            const empKey = emp.key || emp.username || emp.name;
+                                            const isChecked = selectedIncentivePdfUsers.includes(empKey);
+                                            return (
+                                                <button
+                                                    key={empKey}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedIncentivePdfUsers(prev =>
+                                                            prev.includes(empKey) ? prev.filter(k => k !== empKey) : [...prev, empKey]
+                                                        );
+                                                    }}
+                                                    className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                                                        isChecked
+                                                            ? 'bg-emerald-600/30 border-emerald-400 text-emerald-200'
+                                                            : 'bg-gray-900/70 border-white/10 text-gray-400 hover:text-white'
+                                                    }`}
+                                                >
+                                                    {emp.name}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* قائمة الأشهر المحفوظة: عند الضغط على الشهر يظهر الحافز المحفوظ */}
+                        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2.5 pr-1 pl-1">
+                            {savedIncentiveBatches.length === 0 ? (
+                                <div className="text-center py-12 text-gray-400 font-bold">لا يوجد سجل حافز محفوظ بعد</div>
+                            ) : (
+                                savedIncentiveBatches.map(batch => {
+                                    const isExpanded = expandedIncentiveLogMonth === batch.id;
+                                    const entriesList = Object.values(batch.entries || {}) as any[];
+                                    return (
+                                        <div key={batch.id} className="bg-gray-800/70 border border-white/10 rounded-2xl overflow-hidden">
+                                            <div
+                                                onClick={() => {
+                                                    setExpandedIncentiveLogMonth(isExpanded ? null : batch.id);
+                                                    setIncentivePdfBatchId(batch.id);
+                                                }}
+                                                className="w-full p-3.5 sm:p-4 flex items-center justify-between hover:bg-white/5 transition cursor-pointer"
+                                            >
+                                                <div className="flex items-center gap-2.5">
+                                                    <Calendar size={18} className="text-amber-400 shrink-0" />
+                                                    <div>
+                                                        <div className="font-black text-sm sm:text-base text-white">{batch.shortMonthName}</div>
+                                                        <div className="text-[11px] text-gray-400 font-bold">الفترة: من {formatIncentiveDateDMY(batch.startDate)} إلى {formatIncentiveDateDMY(batch.endDate)}</div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded-lg font-bold">
+                                                        {entriesList.length} موظف
+                                                    </span>
+                                                    {isExpanded ? <ChevronUp size={18} className="text-white/70" /> : <ChevronDown size={18} className="text-white/70" />}
+                                                </div>
+                                            </div>
+
+                                            {isExpanded && (
+                                                <div className="p-3 sm:p-4 border-t border-white/10 bg-gray-950/50 space-y-2">
+                                                    {entriesList.map((entry: any, idx: number) => (
+                                                        <div key={entry.userId || idx} className="bg-gray-900 border border-white/10 rounded-xl p-2.5 sm:p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                                                            <div className="font-black text-white text-sm">{entry.employeeName}</div>
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <span className="bg-gray-800 text-amber-300 px-2.5 py-1 rounded-lg font-bold">
+                                                                    الإجازات: {entry.leaveDays} يوم
+                                                                </span>
+                                                                {entry.hasSales ? (
+                                                                    <span className="bg-purple-950/60 text-purple-300 border border-purple-500/30 px-2.5 py-1 rounded-lg font-bold">
+                                                                        التارجت: {(entry.targetAmount || 0).toLocaleString()} | المحقق: {(entry.achievedAmount || 0).toLocaleString()} ({entry.achievedPercent || 0}%)
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="bg-cyan-950/60 text-cyan-300 border border-cyan-500/30 px-2.5 py-1 rounded-lg font-black">
+                                                                        منسق
+                                                                    </span>
+                                                                )}
+                                                                <span className="bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 px-3 py-1 rounded-lg font-black text-sm">
+                                                                    الحافز: {(Number(entry.finalIncentive) || 0).toLocaleString()} ج.م
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* شاشة الحافز الخاصة بالموظف في سجل المبيعات (تظهر الشهر وأمامه الحافز وعند الضغط يظهر التاريخ والإجازات والتارجت المحقق والحافز في سطرين فقط) */}
+            {showUserIncentiveModal && (
+                <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+                    <div className="bg-gray-900 border border-white/20 w-full max-w-lg rounded-3xl p-4 sm:p-6 shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh] my-auto overflow-hidden text-right">
+                        <div className="flex justify-between items-center pb-3 border-b border-white/10 shrink-0">
+                            <div className="flex items-center gap-2">
+                                <Sparkles className="text-amber-400" size={22} />
+                                <h3 className="font-black text-lg sm:text-xl text-white">
+                                    الحافز الشهري - {user.role === 'admin' ? (adminPreviewSalesEmp || salesIncentiveEmployeeNames[0] || user.name) : user.name}
+                                </h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowUserIncentiveModal(false)}
+                                className="text-white/60 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition cursor-pointer"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {user.role === 'admin' && salesIncentiveEmployeeNames.length > 1 && (
+                            <div className="mt-2.5">
+                                <select
+                                    value={adminPreviewSalesEmp || salesIncentiveEmployeeNames[0] || ''}
+                                    onChange={e => setAdminPreviewSalesEmp(e.target.value)}
+                                    className="w-full p-2 rounded-xl bg-gray-800 text-white border border-white/15 text-xs font-bold outline-none"
+                                >
+                                    {salesIncentiveEmployeeNames.map(name => (
+                                        <option key={name} value={name}>{name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+
+                        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2.5 mt-3 pr-1 pl-1">
+                            {currentUserIncentiveMonths.map(item => {
+                                const isExpanded = expandedUserIncentiveMonth === item.batchId;
+                                return (
+                                    <div key={item.batchId} className="bg-gray-800/80 border border-white/10 rounded-2xl overflow-hidden">
+                                        {/* السطر الرئيسي: الشهر وأمامه الحافز */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setExpandedUserIncentiveMonth(isExpanded ? null : item.batchId)}
+                                            className="w-full p-3.5 sm:p-4 flex items-center justify-between hover:bg-white/5 transition cursor-pointer text-right"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <Calendar size={17} className="text-amber-400 shrink-0" />
+                                                <span className="font-black text-sm sm:text-base text-white">{item.shortMonthName}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-3 py-1 rounded-xl font-black text-sm">
+                                                    {(Number(item.entry.finalIncentive) || 0).toLocaleString()} ج.م
+                                                </span>
+                                                {isExpanded ? <ChevronUp size={17} className="text-white/60" /> : <ChevronDown size={17} className="text-white/60" />}
+                                            </div>
+                                        </button>
+
+                                        {/* عند الضغط على الشهر: تاريخ الشهر من كام إلى كام + الإجازات المسجلة + التارجت المحقق + الحافز في سطرين فقط */}
+                                        {isExpanded && (
+                                            <div className="px-3.5 py-3 border-t border-white/10 bg-gray-950/70 space-y-1.5 text-xs sm:text-sm">
+                                                {/* السطر الأول */}
+                                                <div className="flex items-center justify-between gap-2 text-gray-200 font-bold truncate">
+                                                    <span>الفترة: من {formatIncentiveDateDMY(item.startDate)} إلى {formatIncentiveDateDMY(item.endDate)}</span>
+                                                    <span className="text-amber-300 shrink-0">الإجازات المسجلة: {item.entry.leaveDays} يوم</span>
+                                                </div>
+                                                {/* السطر الثاني */}
+                                                <div className="flex items-center justify-between gap-2 text-gray-200 font-bold truncate">
+                                                    <span className="text-blue-300">
+                                                        التارجت المحقق: {(Number(item.entry.achievedAmount) || 0).toLocaleString()} ج.م ({item.entry.achievedPercent || 0}%)
+                                                    </span>
+                                                    <span className="text-emerald-400 font-black shrink-0">
+                                                        الحافز: {(Number(item.entry.finalIncentive) || 0).toLocaleString()} ج.م
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* حاوية طباعة وتصدير PDF لسجل الحافز */}
+            <div ref={incentivePdfPrintRef} style={{ display: 'none', backgroundColor: '#ffffff', color: '#0f172a', padding: '28px', direction: 'rtl', fontFamily: 'Cairo, sans-serif' }}>
+                {(() => {
+                    const targetBatchId = incentivePdfBatchId || (savedIncentiveBatches[0]?.id ?? '');
+                    const batch = savedIncentiveBatches.find(b => b.id === targetBatchId);
+                    if (!batch) return null;
+                    let entriesList = Object.values(batch.entries || {}) as any[];
+                    if (incentivePdfExportMode === 'specific' && selectedIncentivePdfUsers.length > 0) {
+                        entriesList = entriesList.filter(e => selectedIncentivePdfUsers.includes(e.userId));
+                    }
+                    return (
+                        <div>
+                            <div style={{ borderBottom: '3px solid #0f172a', paddingBottom: '12px', marginBottom: '18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <h1 style={{ fontSize: '22px', fontWeight: 900, margin: 0, color: '#0f172a' }}>شركة سوفت روز للتجارة الحديثة</h1>
+                                    <div style={{ fontSize: '15px', fontWeight: 700, color: '#059669', marginTop: '4px' }}>بيان الحافز الشهري المعتمد - {batch.shortMonthName}</div>
+                                </div>
+                                <div style={{ textAlign: 'left', fontSize: '12px', fontWeight: 700, background: '#f8fafc', padding: '8px 14px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+                                    <div>الفترة: من {formatIncentiveDateDMY(batch.startDate)} إلى {formatIncentiveDateDMY(batch.endDate)}</div>
+                                    <div>عدد الحسابات: {entriesList.length}</div>
+                                </div>
+                            </div>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'center' }}>
+                                <thead>
+                                    <tr style={{ backgroundColor: '#1e293b', color: '#ffffff' }}>
+                                        <th style={{ border: '1px solid #cbd5e1', padding: '8px' }}>م</th>
+                                        <th style={{ border: '1px solid #cbd5e1', padding: '8px', textAlign: 'right' }}>اسم الموظف</th>
+                                        <th style={{ border: '1px solid #cbd5e1', padding: '8px' }}>عدد الإجازات</th>
+                                        <th style={{ border: '1px solid #cbd5e1', padding: '8px' }}>التارجت / الصفة</th>
+                                        <th style={{ border: '1px solid #cbd5e1', padding: '8px' }}>الحافز النهائي</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {entriesList.map((entry: any, idx: number) => (
+                                        <tr key={entry.userId || idx} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '8px', fontWeight: 700 }}>{idx + 1}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '8px', textAlign: 'right', fontWeight: 800 }}>{entry.employeeName}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '8px', fontWeight: 700 }}>{entry.leaveDays} يوم</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '8px', fontWeight: 700 }}>
+                                                {entry.hasSales
+                                                    ? `التارجت: ${(entry.targetAmount || 0).toLocaleString()} | المحقق: ${(entry.achievedAmount || 0).toLocaleString()} (${entry.achievedPercent || 0}%)`
+                                                    : 'منسق'}
+                                            </td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '8px', fontWeight: 900, color: '#047857' }}>
+                                                {(Number(entry.finalIncentive) || 0).toLocaleString()} ج.م
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    );
+                })()}
+            </div>
         </>
     );
 };
