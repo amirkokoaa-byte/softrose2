@@ -425,9 +425,9 @@ const CompetitorPrices: React.FC<Props> = ({ user, markets, theme, products }) =
                 })}
             </div>
             
-            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 w-full max-w-md px-4 z-50">
-                <button onClick={handleSaveReport} disabled={Object.keys(pricesState).length === 0} className="bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:active:scale-100 w-full py-5 text-white rounded-3xl font-black shadow-2xl flex items-center justify-center gap-2 transform active:scale-95 transition">
-                    <Save size={20}/> حفظ وترحيل أسعار المنافسين
+            <div className="fixed bottom-16 md:bottom-4 left-1/2 -translate-x-1/2 z-50 px-2">
+                <button onClick={handleSaveReport} disabled={Object.keys(pricesState).length === 0} className="bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:active:scale-100 py-2 px-5 sm:py-2.5 sm:px-6 text-white rounded-2xl text-xs sm:text-sm font-black shadow-2xl flex items-center justify-center gap-1.5 whitespace-nowrap transform active:scale-95 transition cursor-pointer">
+                    <Save size={16}/> حفظ وترحيل أسعار المنافسين
                 </button>
             </div>
         </div>

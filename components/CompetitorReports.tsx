@@ -13,9 +13,10 @@ interface Props {
     markets: string[];
     theme: string;
     products?: any[];
+    openComparisonTrigger?: number;
 }
 
-const CompetitorReports: React.FC<Props> = ({ user, markets, theme, products = [] }) => {
+const CompetitorReports: React.FC<Props> = ({ user, markets, theme, products = [], openComparisonTrigger }) => {
     const [data, setData] = useState<CompetitorPrice[]>([]);
     const [competitorProductsDB, setCompetitorProductsDB] = useState<any>({});
     const [selectedMarket, setSelectedMarket] = useState('');
@@ -25,6 +26,14 @@ const CompetitorReports: React.FC<Props> = ({ user, markets, theme, products = [
     
     // Price Comparison State
     const [showComparisonModal, setShowComparisonModal] = useState(false);
+
+    useEffect(() => {
+        if (openComparisonTrigger && openComparisonTrigger > 0) {
+            setShowComparisonModal(true);
+        } else {
+            setShowComparisonModal(false);
+        }
+    }, [openComparisonTrigger]);
     const [showComparisonDataModal, setShowComparisonDataModal] = useState(false);
     const [compMarket, setCompMarket] = useState('all');
     const [compCompany, setCompCompany] = useState(COMPANIES[0]);

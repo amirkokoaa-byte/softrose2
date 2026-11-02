@@ -17,14 +17,23 @@ import { jsPDF } from 'jspdf';
 interface Props {
     user: User;
     theme: string;
+    openAddLeaveTrigger?: number;
 }
 
-const LeaveBalanceComponent: React.FC<Props> = ({ user, theme }) => {
+const LeaveBalanceComponent: React.FC<Props> = ({ user, theme, openAddLeaveTrigger }) => {
     const [balances, setBalances] = useState<Record<string, LeaveBalance>>({});
     const [usersList, setUsersList] = useState<User[]>([]);
     const [allHistory, setAllHistory] = useState<({id: string} & LeaveRecord)[]>([]);
     
     const [showAddLeaveModal, setShowAddLeaveModal] = useState(false);
+
+    useEffect(() => {
+        if (openAddLeaveTrigger && openAddLeaveTrigger > 0) {
+            setShowAddLeaveModal(true);
+        } else {
+            setShowAddLeaveModal(false);
+        }
+    }, [openAddLeaveTrigger]);
     const [showHistoryDetailsModal, setShowHistoryDetailsModal] = useState(false);
     const [historyFilterType, setHistoryFilterType] = useState<string>('all');
     const [showExportModal, setShowExportModal] = useState(false);

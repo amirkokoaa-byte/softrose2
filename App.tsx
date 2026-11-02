@@ -19,7 +19,7 @@ import { Attendance } from './components/Attendance';
 import BranchNumbers from './components/BranchNumbers';
 import Employees from './components/Employees';
 import Settings from './components/Settings';
-import { Home, LogOut, Phone, Wifi, WifiOff, Menu, X, Palette, Bell, MailOpen, Check, Trash2, Clock, Copy, ExternalLink, Sparkles, MessageCircle, ChevronUp, Download, Smartphone, Monitor, Share2, PlusSquare, CheckCircle2 } from 'lucide-react';
+import { Home, LogOut, Phone, Wifi, WifiOff, Menu, X, Palette, Bell, MailOpen, Check, Trash2, Clock, Copy, ExternalLink, Sparkles, MessageCircle, ChevronUp, Download, Smartphone, Monitor, Share2, PlusSquare, CheckCircle2, ShoppingCart, FileText, TrendingUp, BarChart2, CalendarOff, CalendarPlus, MessageSquareQuote, UserCheck, Scale } from 'lucide-react';
 import { INITIAL_MARKETS } from './constants';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -61,6 +61,9 @@ const App: React.FC = () => {
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const [selectedNotif, setSelectedNotif] = useState<AppNotification | null>(null);
   const [highlightSaleId, setHighlightSaleId] = useState<string | null>(null);
+  const [openAddLeaveTrigger, setOpenAddLeaveTrigger] = useState<number>(0);
+  const [openComparisonTrigger, setOpenComparisonTrigger] = useState<number>(0);
+  const [userHasSalesOrTarget, setUserHasSalesOrTarget] = useState<boolean>(false);
 
   const mainRef = useRef<HTMLElement>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -266,11 +269,12 @@ const App: React.FC = () => {
           const updatedData = { ...snapshot.val(), key: user.key };
           setUser(prev => {
             if (!prev) return updatedData;
-            // Check if anything relevant changed
             const permsChanged = JSON.stringify(prev.permissions) !== JSON.stringify(updatedData.permissions);
             const roleChanged = prev.role !== updatedData.role;
             const nameChanged = prev.name !== updatedData.name;
-            if (permsChanged || roleChanged || nameChanged) {
+            const bottomOrderChanged = JSON.stringify(prev.bottomBarOrder) !== JSON.stringify(updatedData.bottomBarOrder);
+            const bottomHiddenChanged = JSON.stringify(prev.bottomBarHidden) !== JSON.stringify(updatedData.bottomBarHidden);
+            if (permsChanged || roleChanged || nameChanged || bottomOrderChanged || bottomHiddenChanged) {
               try {
                 localStorage.setItem('soft_rose_user', JSON.stringify(updatedData));
               } catch (e) {}
@@ -283,6 +287,63 @@ const App: React.FC = () => {
       return () => unsubscribe();
     }
   }, [user?.key]);
+
+  // التحقق مما إذا كان الحساب له مبيعات أو تارجت مسجل باسمه
+  useEffect(() => {
+    if (!user || user.role === 'admin') return;
+    const normName = (user.name || '').trim().toLowerCase();
+    const normUser = (user.username || '').trim().toLowerCase();
+
+    let hasTarget = false;
+    let hasSale = false;
+
+    const updateStatus = () => {
+      setUserHasSalesOrTarget(hasTarget || hasSale);
+    };
+
+    const unsubTargets = onCachedValue(ref(db, 'targets'), 'targets', (snap) => {
+      hasTarget = false;
+      if (snap.exists()) {
+        const val = snap.val();
+        Object.values(val || {}).forEach((t: any) => {
+          const tName = (t?.employeeName || '').trim().toLowerCase();
+          const tUid = (t?.userId || '').trim().toLowerCase();
+          if (
+            (normName && tName === normName) ||
+            (normUser && (tName === normUser || tUid === normUser)) ||
+            (user.key && t?.userId === user.key)
+          ) {
+            if (Number(t?.finalTarget || t?.targetAmount || 0) > 0) {
+              hasTarget = true;
+            }
+          }
+        });
+      }
+      updateStatus();
+    });
+
+    const unsubSales = onCachedValue(ref(db, 'sales'), 'sales', (snap) => {
+      hasSale = false;
+      if (snap.exists()) {
+        const val = snap.val();
+        for (const k of Object.keys(val || {})) {
+          const s = val[k];
+          const sEmp = (s?.employeeName || '').trim().toLowerCase();
+          const sUsr = (s?.username || '').trim().toLowerCase();
+          if ((normName && (sEmp === normName || sUsr === normName)) || (normUser && (sEmp === normUser || sUsr === normUser))) {
+            hasSale = true;
+            break;
+          }
+        }
+      }
+      updateStatus();
+    });
+
+    return () => {
+      unsubTargets();
+      unsubSales();
+    };
+  }, [user?.key, user?.name, user?.username, user?.role]);
 
   useEffect(() => {
     if (!user) return;
@@ -695,11 +756,11 @@ const App: React.FC = () => {
       <div className="flex flex-1 overflow-hidden relative z-10">
         {isSidebarOpen && (
             <div 
-                className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm transition-opacity"
+                className="fixed inset-0 bg-black/60 z-[80] md:hidden backdrop-blur-sm transition-opacity cursor-pointer"
                 onClick={() => setIsSidebarOpen(false)}
             />
         )}
-        <div className={`fixed md:relative top-0 bottom-0 right-0 z-50 h-full transition-transform duration-300 md:transform-none ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
+        <div className={`fixed md:relative top-0 bottom-0 right-0 z-[90] h-full transition-transform duration-300 md:transform-none ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
             <Sidebar 
                 currentView={currentView} 
                 setView={(view) => { setCurrentView(view); setIsSidebarOpen(false); }} 
@@ -711,17 +772,21 @@ const App: React.FC = () => {
             />
         </div>
         
-        <main ref={mainRef} className="flex-1 p-2 md:p-4 overflow-y-auto w-full z-10">
+        <main
+            ref={mainRef}
+            onClick={() => { if (isSidebarOpen) setIsSidebarOpen(false); }}
+            className="flex-1 p-2 pb-20 md:p-4 md:pb-4 overflow-y-auto w-full z-10"
+        >
             <div className="p-4 md:p-6 min-h-full rounded-2xl md:rounded-3xl bg-slate-900/85 border border-blue-500/40 shadow-[0_0_20px_rgba(59,130,246,0.35)] transition-all duration-300">
                 {currentView === 'sales' && <DailySales user={user} markets={markets} theme={theme} products={products} />}
                 {currentView === 'salesLog' && <SalesLog user={user} markets={markets} theme={theme} products={products} highlightSaleId={highlightSaleId || undefined} />}
                 {currentView === 'inventoryReg' && <InventoryRegistration user={user} markets={markets} theme={theme} products={products} />}
                 {currentView === 'inventoryLog' && <InventoryLog user={user} markets={markets} theme={theme} />}
                 {currentView === 'competitorPrices' && <CompetitorPrices user={user} markets={markets} theme={theme} products={products} />}
-                {currentView === 'competitorReports' && <CompetitorReports user={user} markets={markets} theme={theme} products={products} />}
+                {currentView === 'competitorReports' && <CompetitorReports user={user} markets={markets} theme={theme} products={products} openComparisonTrigger={openComparisonTrigger} />}
                 {currentView === 'productsRegistry' && <ProductsRegistry user={user} theme={theme} products={products} />}
                 {currentView === 'customerFeedback' && <CustomerFeedbackComponent user={user} theme={theme} markets={markets} />}
-                {currentView === 'leaveBalance' && <LeaveBalanceComponent user={user} theme={theme} />}
+                {currentView === 'leaveBalance' && <LeaveBalanceComponent user={user} theme={theme} openAddLeaveTrigger={openAddLeaveTrigger} />}
                 {currentView === 'attendance' && <Attendance user={user} theme={theme} markets={markets} />}
                 {currentView === 'branchNumbers' && <BranchNumbers user={user} theme={theme} markets={markets} />}
                 {currentView === 'employees' && <Employees user={user} theme={theme} />}
@@ -742,7 +807,192 @@ const App: React.FC = () => {
         </button>
       )}
 
-      <footer className="py-2.5 px-4 text-center text-[10px] font-bold text-white/60 backdrop-blur-xl bg-slate-900/65 border-t border-blue-500/40 shadow-[0_0_20px_rgba(59,130,246,0.35)] transition-all duration-300 z-10">
+      {/* شريط التنقل السفلي في نسخة الهاتف فقط */}
+      {(() => {
+        const isAdmin = user.role === 'admin';
+        const isCoordinatorAccount = !isAdmin && (
+          user.role === 'coordinator' ||
+          user.role === 'merchandiser' ||
+          (!userHasSalesOrTarget && user.permissions?.showDailySales === false)
+        );
+
+        const adminItems = [
+          {
+            id: 'admin_salesLog',
+            label: 'سجل المبيعات',
+            icon: FileText,
+            isActive: currentView === 'salesLog' && !isSidebarOpen,
+            onClick: () => { setCurrentView('salesLog'); setIsSidebarOpen(false); }
+          },
+          {
+            id: 'admin_competitorReports',
+            label: 'اسعار',
+            icon: BarChart2,
+            isActive: currentView === 'competitorReports' && !openComparisonTrigger && !isSidebarOpen,
+            onClick: () => {
+              setOpenComparisonTrigger(0);
+              setCurrentView('competitorReports');
+              setIsSidebarOpen(false);
+            }
+          },
+          {
+            id: 'admin_leaveBalance',
+            label: 'رصيد الاجازات',
+            icon: CalendarOff,
+            isActive: currentView === 'leaveBalance' && !openAddLeaveTrigger && !isSidebarOpen,
+            onClick: () => {
+              setOpenAddLeaveTrigger(0);
+              setCurrentView('leaveBalance');
+              setIsSidebarOpen(false);
+            }
+          },
+          {
+            id: 'admin_addLeave',
+            label: 'تسجيل اجازه',
+            icon: CalendarPlus,
+            isActive: currentView === 'leaveBalance' && Boolean(openAddLeaveTrigger) && !isSidebarOpen,
+            onClick: () => {
+              setCurrentView('leaveBalance');
+              setOpenAddLeaveTrigger(Date.now());
+              setIsSidebarOpen(false);
+            }
+          },
+          {
+            id: 'admin_attendance',
+            label: 'تسجيل حضور',
+            icon: UserCheck,
+            isActive: currentView === 'attendance' && !isSidebarOpen,
+            onClick: () => { setCurrentView('attendance'); setIsSidebarOpen(false); }
+          },
+          {
+            id: 'admin_priceComparison',
+            label: 'مقارنه سعر',
+            icon: Scale,
+            isActive: currentView === 'competitorReports' && Boolean(openComparisonTrigger) && !isSidebarOpen,
+            onClick: () => {
+              setCurrentView('competitorReports');
+              setOpenComparisonTrigger(Date.now());
+              setIsSidebarOpen(false);
+            }
+          }
+        ];
+
+        const employeeAllItems = [
+          {
+            id: 'sales',
+            label: 'المبيعات',
+            icon: ShoppingCart,
+            isActive: currentView === 'sales' && !isSidebarOpen,
+            onClick: () => { setCurrentView('sales'); setIsSidebarOpen(false); }
+          },
+          {
+            id: 'salesLog',
+            label: 'سجل بيع',
+            icon: FileText,
+            isActive: currentView === 'salesLog' && !isSidebarOpen,
+            onClick: () => { setCurrentView('salesLog'); setIsSidebarOpen(false); }
+          },
+          {
+            id: 'competitorPrices',
+            label: 'الاسعار',
+            icon: TrendingUp,
+            isActive: currentView === 'competitorPrices' && !isSidebarOpen,
+            onClick: () => { setCurrentView('competitorPrices'); setIsSidebarOpen(false); }
+          },
+          {
+            id: 'leaveBalance',
+            label: 'الاجازات',
+            icon: CalendarOff,
+            isActive: currentView === 'leaveBalance' && !isSidebarOpen,
+            onClick: () => { setOpenAddLeaveTrigger(0); setCurrentView('leaveBalance'); setIsSidebarOpen(false); }
+          },
+          {
+            id: 'customerFeedback',
+            label: 'الشكاوي',
+            icon: MessageSquareQuote,
+            isActive: currentView === 'customerFeedback' && !isSidebarOpen,
+            onClick: () => { setCurrentView('customerFeedback'); setIsSidebarOpen(false); }
+          },
+          {
+            id: 'attendance',
+            label: 'تسجيل حضور',
+            icon: UserCheck,
+            isActive: currentView === 'attendance' && !isSidebarOpen,
+            onClick: () => { setCurrentView('attendance'); setIsSidebarOpen(false); }
+          },
+          {
+            id: 'menu',
+            label: 'القائمه',
+            icon: Menu,
+            isActive: isSidebarOpen,
+            onClick: () => setIsSidebarOpen(prev => !prev)
+          }
+        ];
+
+        const basePool = isAdmin ? adminItems : employeeAllItems;
+        const savedOrder = isAdmin
+          ? (user.bottomBarOrder || settings.adminBottomBarOrder || [])
+          : (user.bottomBarOrder || []);
+        const defaultOrder = basePool.map(i => i.id);
+        const mergedOrder = [
+          ...savedOrder.filter(id => defaultOrder.includes(id)),
+          ...defaultOrder.filter(id => !savedOrder.includes(id))
+        ];
+
+        const orderedItems = mergedOrder
+          .map(id => basePool.find(i => i.id === id)!)
+          .filter(Boolean);
+
+        const visibleItems = orderedItems.filter(item => {
+          if (isAdmin) {
+            const hidden = user.bottomBarHidden || settings.adminBottomBarHidden || [];
+            return !hidden.includes(item.id);
+          }
+          if (user.bottomBarHidden) {
+            return !user.bottomBarHidden.includes(item.id);
+          }
+          // الافتراضي لحسابات المبيعات مقابل حسابات المنسق
+          if (isCoordinatorAccount) {
+            return item.id !== 'sales' && item.id !== 'salesLog';
+          } else {
+            return item.id !== 'competitorPrices';
+          }
+        });
+
+        if (visibleItems.length === 0) return null;
+
+        return (
+          <nav
+            dir="rtl"
+            className="md:hidden fixed bottom-0 left-0 right-0 z-[75] backdrop-blur-xl bg-slate-950/95 border-t border-blue-500/40 shadow-[0_-4px_20px_rgba(59,130,246,0.3)] px-0.5 py-1 overflow-x-hidden"
+          >
+            <div className="flex items-stretch justify-between gap-0.5 w-full overflow-x-hidden">
+              {visibleItems.map(item => {
+                const IconComp = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={item.onClick}
+                    className={`flex-1 min-w-fit flex flex-col items-center justify-center gap-0.5 py-1 px-0.5 rounded-xl transition-all duration-200 cursor-pointer ${
+                      item.isActive
+                        ? 'bg-blue-600/85 text-white shadow-[0_0_12px_rgba(59,130,246,0.5)] border border-blue-400/50'
+                        : 'text-gray-300 hover:text-white hover:bg-white/5 border border-transparent'
+                    }`}
+                  >
+                    <IconComp size={15} className="shrink-0" />
+                    <span className="text-[8.5px] min-[380px]:text-[9.5px] font-black leading-tight whitespace-nowrap text-center tracking-tight">
+                      {item.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
+        );
+      })()}
+
+      <footer className="hidden md:block py-2.5 px-4 text-center text-[10px] font-bold text-white/60 backdrop-blur-xl bg-slate-900/65 border-t border-blue-500/40 shadow-[0_0_20px_rgba(59,130,246,0.35)] transition-all duration-300 z-10">
           مع تحيات المطور Amir Lamay
       </footer>
     </div>

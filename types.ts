@@ -92,6 +92,8 @@ export interface User {
     password?: string;
     permissions?: UserPermissions;
     isArchived?: boolean;
+    bottomBarOrder?: string[];
+    bottomBarHidden?: string[];
 }
 
 export interface AppSettings {
@@ -102,6 +104,8 @@ export interface AppSettings {
     appDownloadLink?: string;
     appStoreLink?: string;
     permissions: UserPermissions;
+    adminBottomBarOrder?: string[];
+    adminBottomBarHidden?: string[];
 }
 
 export interface LeaveBalance {

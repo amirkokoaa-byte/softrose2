@@ -7,7 +7,8 @@ import { User, AppSettings, UserPermissions, AppNotification } from '../types';
 import { 
   Save, Trash2, UserPlus, Shield, Edit2, Plus, X, 
   Settings as SettingsIcon, Users, MapPin, Building2, 
-  ToggleLeft, ToggleRight, Key, Send, Smartphone, Link as LinkIcon, Download
+  ToggleLeft, ToggleRight, Key, Send, Smartphone, Link as LinkIcon, Download,
+  ArrowRight, ArrowLeft, Eye, EyeOff
 } from 'lucide-react';
 
 interface Props {
@@ -44,6 +45,7 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
     const [passModal, setPassModal] = useState<{key: string, name: string} | null>(null);
     const [permModal, setPermModal] = useState<User | null>(null);
     const [notifModal, setNotifModal] = useState<{username: string, name: string} | null>(null);
+    const [employeeActionModal, setEmployeeActionModal] = useState<User | null>(null);
     const [roleModal, setRoleModal] = useState<User | null>(null);
     const [newPass, setNewPass] = useState('');
     const [notifMsg, setNotifMsg] = useState('');
@@ -198,11 +200,28 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
             showEmployees: false,
             showSettings: false
         };
-        await update(ref(db, `users/${permModal.key}`), { 
-            permissions: permissions,
-            canViewAllSales: !!permModal.canViewAllSales
-        });
-        alert("تم تحديث وحفظ صلاحيات الموظف بنجاح");
+        if (permModal.key === 'admin_root' || permModal.role === 'admin') {
+            await update(ref(db, 'settings/app'), {
+                adminBottomBarOrder: permModal.bottomBarOrder || [],
+                adminBottomBarHidden: permModal.bottomBarHidden || []
+            });
+            if (permModal.key !== 'admin_root') {
+                await update(ref(db, `users/${permModal.key}`), {
+                    permissions,
+                    canViewAllSales: true,
+                    bottomBarOrder: permModal.bottomBarOrder || [],
+                    bottomBarHidden: permModal.bottomBarHidden || []
+                });
+            }
+        } else {
+            await update(ref(db, `users/${permModal.key}`), { 
+                permissions: permissions,
+                canViewAllSales: !!permModal.canViewAllSales,
+                bottomBarOrder: permModal.bottomBarOrder || [],
+                bottomBarHidden: permModal.bottomBarHidden || []
+            });
+        }
+        alert("تم تحديث وحفظ الصلاحيات وإعدادات الشريط السفلي بنجاح");
         setPermModal(null);
     };
 
@@ -390,6 +409,204 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
         }
     };
 
+    // أزرار الشريط السفلي للهاتف (للموظفين والمنسقين وللمدير العام)
+    const EMPLOYEE_BOTTOM_BAR_ITEMS = [
+        { id: 'sales', label: 'المبيعات (المبيعات اليومية)' },
+        { id: 'salesLog', label: 'سجل بيع (سجل المبيعات)' },
+        { id: 'competitorPrices', label: 'الاسعار (أسعار المنافسين)' },
+        { id: 'leaveBalance', label: 'الاجازات (رصيد الإجازات)' },
+        { id: 'customerFeedback', label: 'الشكاوي (الشكاوي والمقترحات)' },
+        { id: 'attendance', label: 'تسجيل حضور (الحضور والانصراف)' },
+        { id: 'menu', label: 'القائمه (فتح القائمة الجانبية)' }
+    ];
+
+    const ADMIN_BOTTOM_BAR_ITEMS = [
+        { id: 'admin_salesLog', label: 'سجل المبيعات' },
+        { id: 'admin_competitorReports', label: 'اسعار (تقارير المنافسين)' },
+        { id: 'admin_leaveBalance', label: 'رصيد الاجازات' },
+        { id: 'admin_addLeave', label: 'تسجيل اجازه (فتح نافذة تسجيل إجازة)' },
+        { id: 'admin_attendance', label: 'تسجيل حضور' },
+        { id: 'admin_priceComparison', label: 'مقارنه سعر (فتح نافذة المقارنة)' }
+    ];
+
+    const getModalBottomBarList = (targetUser: User) => {
+        const isAdminUser = targetUser.role === 'admin' || targetUser.key === 'admin_root';
+        const baseItems = isAdminUser ? ADMIN_BOTTOM_BAR_ITEMS : EMPLOYEE_BOTTOM_BAR_ITEMS;
+        const savedOrder = isAdminUser
+            ? (targetUser.bottomBarOrder || localSettings.adminBottomBarOrder || [])
+            : (targetUser.bottomBarOrder || []);
+        const defaultOrder = baseItems.map(i => i.id);
+        const mergedOrder = [
+            ...savedOrder.filter(id => defaultOrder.includes(id)),
+            ...defaultOrder.filter(id => !savedOrder.includes(id))
+        ];
+        return mergedOrder.map(id => baseItems.find(i => i.id === id)!).filter(Boolean);
+    };
+
+    const isBottomBarItemHidden = (targetUser: User, itemId: string) => {
+        const isAdminUser = targetUser.role === 'admin' || targetUser.key === 'admin_root';
+        if (isAdminUser) {
+            const hidden = targetUser.bottomBarHidden || localSettings.adminBottomBarHidden || [];
+            return hidden.includes(itemId);
+        }
+        if (targetUser.bottomBarHidden) {
+            return targetUser.bottomBarHidden.includes(itemId);
+        }
+        // الافتراضي للموظف مقابل المنسق إذا لم يتم تخصيصه بعد
+        const isCoordinator = targetUser.role === 'coordinator' || targetUser.role === 'merchandiser';
+        if (isCoordinator) {
+            return itemId === 'sales' || itemId === 'salesLog';
+        } else {
+            return itemId === 'competitorPrices';
+        }
+    };
+
+    const toggleBottomBarItemVisibility = async (itemId: string) => {
+        if (!permModal) return;
+        const isAdminUser = permModal.role === 'admin' || permModal.key === 'admin_root';
+        const baseItems = isAdminUser ? ADMIN_BOTTOM_BAR_ITEMS : EMPLOYEE_BOTTOM_BAR_ITEMS;
+
+        let currentHidden: string[] = [];
+        if (isAdminUser) {
+            currentHidden = [...(permModal.bottomBarHidden || localSettings.adminBottomBarHidden || [])];
+        } else if (permModal.bottomBarHidden) {
+            currentHidden = [...permModal.bottomBarHidden];
+        } else {
+            currentHidden = baseItems.filter(i => isBottomBarItemHidden(permModal, i.id)).map(i => i.id);
+        }
+
+        const nextHidden = currentHidden.includes(itemId)
+            ? currentHidden.filter(id => id !== itemId)
+            : [...currentHidden, itemId];
+
+        const currentOrder = getModalBottomBarList(permModal).map(i => i.id);
+        const updatedUser = {
+            ...permModal,
+            bottomBarHidden: nextHidden,
+            bottomBarOrder: currentOrder
+        };
+        setPermModal(updatedUser);
+
+        try {
+            if (isAdminUser) {
+                setLocalSettings(prev => ({
+                    ...prev,
+                    adminBottomBarHidden: nextHidden,
+                    adminBottomBarOrder: currentOrder
+                }));
+                await update(ref(db, 'settings/app'), {
+                    adminBottomBarHidden: nextHidden,
+                    adminBottomBarOrder: currentOrder
+                });
+                if (permModal.key && permModal.key !== 'admin_root') {
+                    await update(ref(db, `users/${permModal.key}`), {
+                        bottomBarHidden: nextHidden,
+                        bottomBarOrder: currentOrder
+                    });
+                }
+            } else if (permModal.key) {
+                await update(ref(db, `users/${permModal.key}`), {
+                    bottomBarHidden: nextHidden,
+                    bottomBarOrder: currentOrder
+                });
+            }
+        } catch (err) {
+            console.error('Error updating bottom bar visibility:', err);
+        }
+    };
+
+    const moveBottomBarItemOrder = async (index: number, direction: 'right' | 'left') => {
+        if (!permModal) return;
+        const list = getModalBottomBarList(permModal);
+        // في التخطيط العربي من اليمين إلى اليسار: اليمين يعني فهرس أقل (-1) واليسار يعني فهرس أكبر (+1)
+        const targetIndex = direction === 'right' ? index - 1 : index + 1;
+        if (targetIndex < 0 || targetIndex >= list.length) return;
+
+        const newOrder = list.map(i => i.id);
+        const [moved] = newOrder.splice(index, 1);
+        newOrder.splice(targetIndex, 0, moved);
+
+        const isAdminUser = permModal.role === 'admin' || permModal.key === 'admin_root';
+        const baseItems = isAdminUser ? ADMIN_BOTTOM_BAR_ITEMS : EMPLOYEE_BOTTOM_BAR_ITEMS;
+        const currentHidden = permModal.bottomBarHidden
+            ? permModal.bottomBarHidden
+            : baseItems.filter(i => isBottomBarItemHidden(permModal, i.id)).map(i => i.id);
+
+        const updatedUser = {
+            ...permModal,
+            bottomBarOrder: newOrder,
+            bottomBarHidden: currentHidden
+        };
+        setPermModal(updatedUser);
+
+        try {
+            if (isAdminUser) {
+                setLocalSettings(prev => ({
+                    ...prev,
+                    adminBottomBarOrder: newOrder,
+                    adminBottomBarHidden: currentHidden
+                }));
+                await update(ref(db, 'settings/app'), {
+                    adminBottomBarOrder: newOrder,
+                    adminBottomBarHidden: currentHidden
+                });
+                if (permModal.key && permModal.key !== 'admin_root') {
+                    await update(ref(db, `users/${permModal.key}`), {
+                        bottomBarOrder: newOrder,
+                        bottomBarHidden: currentHidden
+                    });
+                }
+            } else if (permModal.key) {
+                await update(ref(db, `users/${permModal.key}`), {
+                    bottomBarOrder: newOrder,
+                    bottomBarHidden: currentHidden
+                });
+            }
+        } catch (err) {
+            console.error('Error reordering bottom bar items:', err);
+        }
+    };
+
+    const displayedUsersList: User[] = React.useMemo(() => {
+        const hasAdminAccount = users.some(u => u.role === 'admin' || u.username === 'admin' || u.name === 'المدير العام');
+        if (hasAdminAccount) {
+            return users.map(u => {
+                if (u.role === 'admin' || u.username === 'admin' || u.name === 'المدير العام') {
+                    return {
+                        ...u,
+                        bottomBarOrder: u.bottomBarOrder || localSettings.adminBottomBarOrder,
+                        bottomBarHidden: u.bottomBarHidden || localSettings.adminBottomBarHidden
+                    };
+                }
+                return u;
+            });
+        }
+        const adminEntry: User = {
+            key: 'admin_root',
+            name: 'المدير العام',
+            username: 'admin',
+            role: 'admin',
+            permissions: {
+                showDailySales: true,
+                showSalesLog: true,
+                showInventoryReg: true,
+                showInventoryLog: true,
+                showCompetitorPrices: true,
+                showCompetitorReports: true,
+                showProductsRegistry: true,
+                showCustomerFeedback: true,
+                showLeaveBalance: true,
+                showAttendance: true,
+                showBranchNumbers: true,
+                showEmployees: true,
+                showSettings: true
+            },
+            bottomBarOrder: localSettings.adminBottomBarOrder,
+            bottomBarHidden: localSettings.adminBottomBarHidden
+        };
+        return [adminEntry, ...users];
+    }, [users, localSettings.adminBottomBarOrder, localSettings.adminBottomBarHidden]);
+
     const getRoleLabel = (role: string) => {
         switch(role) {
             case 'admin': return 'مسؤول';
@@ -418,42 +635,43 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
 
             {/* إعدادات التطبيق العامة */}
             <div className={sectionClass}>
-                <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-blue-600 border-b pb-3">
+                <h3 className="text-lg sm:text-xl font-bold mb-4 sm:mb-6 flex items-center gap-2 text-blue-500 border-b border-gray-700 pb-3">
                     <Edit2 size={20} /> الإعدادات العامة للمنصة
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label className="block text-sm font-bold mb-2 opacity-70 text-white">اسم التطبيق (AppName)</label>
-                        <input className={inputClass} value={localSettings.appName || ''} onChange={e => setLocalSettings({...localSettings, appName: e.target.value})} />
+                {/* في نسخة الهاتف: اسم التطبيق بجانب رقم الواتساب وأسفلهم نص الشريط المتحرك */}
+                <div className="grid grid-cols-2 gap-2.5 sm:gap-6">
+                    <div className="min-w-0">
+                        <label className="block text-xs sm:text-sm font-bold mb-1.5 opacity-80 text-white truncate">اسم التطبيق (AppName)</label>
+                        <input className={`${inputClass} text-xs sm:text-sm p-2 sm:p-2.5`} value={localSettings.appName || ''} onChange={e => setLocalSettings({...localSettings, appName: e.target.value})} />
                     </div>
-                    <div>
-                        <label className="block text-sm font-bold mb-2 opacity-70 text-white">رقم واتساب الدعم</label>
-                        <input className={inputClass} placeholder="مثال: 2010XXXXXXXX" value={localSettings.whatsappNumber || ''} onChange={e => setLocalSettings({...localSettings, whatsappNumber: e.target.value})} />
+                    <div className="min-w-0">
+                        <label className="block text-xs sm:text-sm font-bold mb-1.5 opacity-80 text-white truncate">رقم واتساب الدعم</label>
+                        <input className={`${inputClass} text-xs sm:text-sm p-2 sm:p-2.5`} placeholder="2010XXXXXXXX" value={localSettings.whatsappNumber || ''} onChange={e => setLocalSettings({...localSettings, whatsappNumber: e.target.value})} />
                     </div>
-                    <div className="md:col-span-2 text-white">
-                        <label className="block text-sm font-bold mb-2 opacity-70">نص الشريط المتحرك (Ticker Text)</label>
+                    <div className="col-span-2 text-white min-w-0">
+                        <label className="block text-xs sm:text-sm font-bold mb-1.5 opacity-80">نص الشريط المتحرك (Ticker Text)</label>
                         <div className="flex gap-2">
-                            <input className={inputClass} value={localSettings.tickerText || ''} onChange={e => setLocalSettings({...localSettings, tickerText: e.target.value})} />
+                            <input className={`${inputClass} text-xs sm:text-sm p-2 sm:p-2.5 flex-1 min-w-0`} value={localSettings.tickerText || ''} onChange={e => setLocalSettings({...localSettings, tickerText: e.target.value})} />
                             <button 
                                 onClick={() => setLocalSettings({...localSettings, tickerEnabled: !localSettings.tickerEnabled})}
-                                className={`px-4 rounded-lg flex items-center gap-2 font-bold ${localSettings.tickerEnabled ? 'bg-green-600 text-white' : 'bg-gray-300 text-gray-700'}`}
+                                className={`px-3 sm:px-4 rounded-lg flex items-center gap-1.5 font-bold text-xs sm:text-sm shrink-0 ${localSettings.tickerEnabled ? 'bg-green-600 text-white' : 'bg-gray-300 text-gray-700'}`}
                             >
-                                {localSettings.tickerEnabled ? <ToggleRight /> : <ToggleLeft />} {localSettings.tickerEnabled ? 'مفعل' : 'معطل'}
+                                {localSettings.tickerEnabled ? <ToggleRight size={18} /> : <ToggleLeft size={18} />} {localSettings.tickerEnabled ? 'مفعل' : 'معطل'}
                             </button>
                         </div>
                     </div>
                 </div>
-                <button onClick={saveAppSettings} className="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg transition transform active:scale-95">
+                <button onClick={saveAppSettings} className="mt-5 w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg transition transform active:scale-95">
                     <Save size={20} /> حفظ الإعدادات العامة
                 </button>
             </div>
 
             {/* إعدادات التطبيق (روابط التحميل والتثبيت) */}
             <div className={sectionClass}>
-                <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-cyan-400 border-b border-gray-700 pb-3">
+                <h3 className="text-lg sm:text-xl font-bold mb-4 sm:mb-6 flex items-center gap-2 text-cyan-400 border-b border-gray-700 pb-3">
                     <Smartphone size={22} /> إعدادات التطبيق
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                     <div>
                         <label className="block text-sm font-bold mb-2 opacity-80 text-white flex items-center gap-1.5">
                             <LinkIcon size={15} className="text-cyan-400" />
@@ -493,10 +711,10 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
 
             {/* إدارة البيانات */}
             <div className={sectionClass}>
-                <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-green-600 border-b pb-3">
+                <h3 className="text-lg sm:text-xl font-bold mb-4 sm:mb-6 flex items-center gap-2 text-green-500 border-b border-gray-700 pb-3">
                     <Save size={20} /> إدارة البيانات (نسخ احتياطي واستعادة)
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                     <button 
                         onClick={handleExportData} 
                         className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold shadow-lg transition transform active:scale-95"
@@ -517,76 +735,87 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
                 </div>
             </div>
 
-            {/* إدارة الشركات والأسواق */}
+            {/* إدارة الشركات والأسواق - في نسخة الهاتف تصغير مساحة الشركات المسجلة وإظهار اسم الماركت بشكل كامل مهما كان كبير */}
             <div className={sectionClass}>
-                <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-yellow-500 border-b pb-3">
+                <h3 className="text-lg sm:text-xl font-bold mb-4 sm:mb-6 flex items-center gap-2 text-yellow-500 border-b border-gray-700 pb-3">
                     <Building2 size={20} /> إدارة الشركات والأسواق
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <h4 className="font-bold mb-4 text-white flex items-center gap-2"><Building2 size={16}/> الشركات المسجلة</h4>
-                        <div className="flex gap-2 mb-4">
+                <div className="grid grid-cols-12 gap-2 sm:gap-6 w-full min-w-0">
+                    {/* الشركات المسجلة (مصغرة ومضمومة قليلاً في الهاتف) */}
+                    <div className="col-span-5 sm:col-span-5 min-w-0">
+                        <h4 className="font-bold mb-2.5 sm:mb-4 text-white flex items-center gap-1 text-[11px] sm:text-base truncate">
+                            <Building2 size={13} className="shrink-0 text-yellow-400"/>
+                            <span className="truncate">الشركات المسجلة</span>
+                        </h4>
+                        <div className="flex gap-1 sm:gap-2 mb-3">
                             <input 
-                                className={inputClass} 
-                                placeholder="اسم الشركة الجديدة" 
+                                className={`${inputClass} p-1.5 sm:p-2.5 text-[10px] sm:text-sm min-w-0`} 
+                                placeholder="شركة جديدة" 
                                 value={newCompanyName} 
                                 onChange={e => setNewCompanyName(e.target.value)} 
                             />
                             <button 
                                 onClick={handleAddCompany} 
-                                className="bg-green-600 hover:bg-green-700 text-white px-4 rounded-lg font-bold flex items-center justify-center transition"
+                                className="bg-green-600 hover:bg-green-700 text-white px-2 sm:px-4 rounded-lg font-bold flex items-center justify-center transition shrink-0"
                             >
-                                <Plus size={20} />
+                                <Plus size={15} />
                             </button>
                         </div>
-                        <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                        <div className="space-y-1.5 sm:space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-0.5 sm:pr-2">
                             {companyList.map(c => (
-                                <div key={c.key} className="flex justify-between items-center bg-gray-700/50 p-3 rounded-xl border border-gray-600">
-                                    <span className="font-bold text-white">{c.name}</span>
-                                    <div className="flex gap-1">
-                                        <button onClick={() => setEditCompanyModal(c)} className="text-blue-400 hover:bg-blue-400/10 p-2 rounded-lg transition">
-                                            <Edit2 size={16}/>
+                                <div key={c.key} className="flex justify-between items-center gap-1 bg-gray-700/50 p-1.5 sm:p-3 rounded-xl border border-gray-600 min-w-0">
+                                    <span className="font-bold text-white text-[10px] sm:text-sm truncate min-w-0 flex-1" title={c.name}>{c.name}</span>
+                                    <div className="flex gap-0.5 sm:gap-1 shrink-0">
+                                        <button onClick={() => setEditCompanyModal(c)} className="text-blue-400 hover:bg-blue-400/10 p-1 sm:p-2 rounded-lg transition">
+                                            <Edit2 size={12}/>
                                         </button>
-                                        <button onClick={() => handleDeleteCompany(c.key)} className="text-red-400 hover:bg-red-400/10 p-2 rounded-lg transition">
-                                            <Trash2 size={16}/>
+                                        <button onClick={() => handleDeleteCompany(c.key)} className="text-red-400 hover:bg-red-400/10 p-1 sm:p-2 rounded-lg transition">
+                                            <Trash2 size={12}/>
                                         </button>
                                     </div>
                                 </div>
                             ))}
-                            {companyList.length === 0 && <div className="text-center opacity-50 text-sm py-4">لا توجد شركات مسجلة</div>}
+                            {companyList.length === 0 && <div className="text-center opacity-50 text-xs py-4">لا توجد شركات</div>}
                         </div>
                     </div>
-                    <div>
-                        <h4 className="font-bold mb-4 text-white flex items-center gap-2"><MapPin size={16}/> الأسواق المسجلة</h4>
-                        <div className="flex gap-2 mb-4">
+
+                    {/* الأسواق المسجلة (تأخذ مساحة أوسع ويظهر اسم الماركت بشكل كامل مهما كان كبير) */}
+                    <div className="col-span-7 sm:col-span-7 min-w-0">
+                        <h4 className="font-bold mb-2.5 sm:mb-4 text-white flex items-center gap-1 text-xs sm:text-base truncate">
+                            <MapPin size={14} className="shrink-0 text-yellow-400"/>
+                            <span className="truncate">الأسواق المسجلة</span>
+                        </h4>
+                        <div className="flex gap-1 sm:gap-2 mb-3">
                             <input 
-                                className={inputClass} 
-                                placeholder="اسم السوق الجديد" 
+                                className={`${inputClass} p-1.5 sm:p-2.5 text-[11px] sm:text-sm min-w-0`} 
+                                placeholder="سوق جديد" 
                                 value={newMarketName} 
                                 onChange={e => setNewMarketName(e.target.value)} 
                             />
                             <button 
                                 onClick={handleAddMarket} 
-                                className="bg-green-600 hover:bg-green-700 text-white px-4 rounded-lg font-bold flex items-center justify-center transition"
+                                className="bg-green-600 hover:bg-green-700 text-white px-2 sm:px-4 rounded-lg font-bold flex items-center justify-center transition shrink-0"
                             >
-                                <Plus size={20} />
+                                <Plus size={16} />
                             </button>
                         </div>
-                        <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                        <div className="space-y-1.5 sm:space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-0.5 sm:pr-2">
                             {marketList.map(m => (
-                                <div key={m.key} className="flex justify-between items-center bg-gray-700/50 p-3 rounded-xl border border-gray-600">
-                                    <span className="font-bold text-white">{m.name}</span>
-                                    <div className="flex gap-1">
-                                        <button onClick={() => setEditMarketModal(m)} className="text-blue-400 hover:bg-blue-400/10 p-2 rounded-lg transition">
-                                            <Edit2 size={16}/>
+                                <div key={m.key} className="flex justify-between items-center gap-1.5 bg-gray-700/50 p-2 sm:p-3 rounded-xl border border-gray-600 min-w-0">
+                                    <span className="font-bold text-white text-[11px] sm:text-sm whitespace-normal break-words leading-snug min-w-0 flex-1">
+                                        {m.name}
+                                    </span>
+                                    <div className="flex gap-0.5 sm:gap-1 shrink-0">
+                                        <button onClick={() => setEditMarketModal(m)} className="text-blue-400 hover:bg-blue-400/10 p-1 sm:p-2 rounded-lg transition">
+                                            <Edit2 size={13}/>
                                         </button>
-                                        <button onClick={() => handleDeleteMarket(m.key)} className="text-red-400 hover:bg-red-400/10 p-2 rounded-lg transition">
-                                            <Trash2 size={16}/>
+                                        <button onClick={() => handleDeleteMarket(m.key)} className="text-red-400 hover:bg-red-400/10 p-1 sm:p-2 rounded-lg transition">
+                                            <Trash2 size={13}/>
                                         </button>
                                     </div>
                                 </div>
                             ))}
-                            {marketList.length === 0 && <div className="text-center opacity-50 text-sm py-4">لا توجد أسواق مسجلة</div>}
+                            {marketList.length === 0 && <div className="text-center opacity-50 text-xs py-4">لا توجد أسواق</div>}
                         </div>
                     </div>
                 </div>
@@ -594,63 +823,143 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
 
             {/* إدارة المستخدمين */}
             <div className={sectionClass}>
-                <h3 className="text-xl font-bold mb-6 flex items-center gap-2 text-purple-600 border-b pb-3">
+                <h3 className="text-lg sm:text-xl font-bold mb-4 sm:mb-6 flex items-center gap-2 text-purple-400 border-b border-gray-700 pb-3">
                     <Users size={20} /> إدارة حسابات وصلاحيات الموظفين
                 </h3>
                 
-                {/* إضافة مستخدم جديد */}
-                <div className="bg-gray-700/50 p-6 rounded-2xl mb-6 border border-gray-600">
-                    <h4 className="font-bold mb-4 flex items-center gap-2 text-sm text-white"><UserPlus size={16}/> إضافة موظف جديد</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <input className={inputClass} placeholder="الاسم الكامل" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
-                        <input className={inputClass} placeholder="اسم المستخدم" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} />
-                        <input className={inputClass} type="password" placeholder="كلمة المرور" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
-                        <select className={inputClass} value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as any})}>
+                {/* إضافة مستخدم جديد: في الهاتف الاسم الكامل بجانب اسم المستخدم وأسفلهم كلمة المرور بجانب الوظيفة */}
+                <div className="bg-gray-700/50 p-3.5 sm:p-6 rounded-2xl mb-5 border border-gray-600">
+                    <h4 className="font-bold mb-3 sm:mb-4 flex items-center gap-2 text-xs sm:text-sm text-white"><UserPlus size={16}/> إضافة موظف جديد</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">
+                        <input className={`${inputClass} text-xs sm:text-sm p-2 sm:p-2.5 min-w-0`} placeholder="الاسم الكامل" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
+                        <input className={`${inputClass} text-xs sm:text-sm p-2 sm:p-2.5 min-w-0`} placeholder="اسم المستخدم" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} />
+                        <input className={`${inputClass} text-xs sm:text-sm p-2 sm:p-2.5 min-w-0`} type="password" placeholder="كلمة المرور" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
+                        <select className={`${inputClass} text-xs sm:text-sm p-2 sm:p-2.5 min-w-0`} value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as any})}>
                             <option value="user">موظف (User)</option>
                             <option value="admin">مسؤول (Admin)</option>
                             <option value="manager">مدير (Manager)</option>
                             <option value="coordinator">منسق (Coordinator)</option>
                             <option value="supervisor">مشرف (Supervisor)</option>
                             <option value="usher">أشر (Usher)</option>
-                            <option value="usher">أشر (Usher)</option>
                         </select>
                     </div>
-                    <button onClick={handleAddUser} className="mt-4 w-full bg-green-600 text-white font-bold py-2 rounded-lg hover:bg-green-700 transition shadow-lg">إضافة الموظف</button>
+                    <button onClick={handleAddUser} className="mt-3.5 w-full bg-green-600 text-white font-bold py-2.5 rounded-lg hover:bg-green-700 transition shadow-lg text-xs sm:text-sm">إضافة الموظف</button>
                 </div>
 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-right">
-                        <thead className="bg-gray-700">
-                            <tr>
-                                <th className="p-3 text-white">الاسم</th>
-                                <th className="p-3 text-white">المستخدم</th>
-                                <th className="p-3 text-white">الدور</th>
-                                <th className="p-3 text-center text-white">الإجراءات</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {users.map(u => (
-                                <tr key={u.key} className="border-b border-gray-700 hover:bg-black/10">
-                                    <td className="p-3 font-bold text-white">{u.name}</td>
-                                    <td className="p-3 opacity-70 text-white">{u.username}</td>
-                                    <td className="p-3">
-                                        <span className={`px-2 py-1 rounded text-[10px] font-bold ${u.role === 'admin' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                {/* الحسابات المسجلة: في نسخة الهاتف يختفي لاين الاسم الإنجليزي ويظهر فقط المستخدم (باللغة العربية) والدور والإجراءات في سطر واحد بدون اختفاء أي جزء من الأزرار */}
+                <div className="w-full overflow-hidden rounded-2xl border border-gray-700 bg-gray-900/50">
+                    {/* ترويسة الجدول */}
+                    <div className="grid grid-cols-12 items-center gap-1 bg-gray-700/80 px-2 sm:px-4 py-2.5 text-[11px] sm:text-sm font-black text-white">
+                        <div className="hidden sm:block sm:col-span-3 text-right truncate">الاسم (اضغط للمراسلة)</div>
+                        <div className="col-span-5 sm:col-span-3 text-right truncate">المستخدم</div>
+                        <div className="col-span-2 sm:col-span-2 text-center truncate">الدور</div>
+                        <div className="col-span-5 sm:col-span-4 text-center truncate">الإجراءات</div>
+                    </div>
+
+                    <div className="divide-y divide-gray-700/70">
+                        {displayedUsersList.map(u => {
+                            const isVirtualAdmin = u.key === 'admin_root';
+                            // في الهاتف يظهر الموظف باللغة العربية في خانة المستخدم
+                            const hasArabicInName = /[\u0600-\u06FF]/.test(u.name || '');
+                            const hasArabicInUsername = /[\u0600-\u06FF]/.test(u.username || '');
+                            const mobileArabicLabel = hasArabicInName ? u.name : (hasArabicInUsername ? u.username : (u.name || u.username));
+
+                            return (
+                                <div
+                                    key={u.key || u.username}
+                                    className="grid grid-cols-12 items-center gap-1 px-2 sm:px-4 py-2 sm:py-3 hover:bg-black/20 transition w-full min-w-0"
+                                >
+                                    {/* الاسم: يظهر في الكمبيوتر فقط ويختفي في نسخة الهاتف */}
+                                    <div className="hidden sm:block sm:col-span-3 min-w-0 text-right">
+                                        <button
+                                            type="button"
+                                            onClick={() => setEmployeeActionModal(u)}
+                                            className="font-black text-sm text-white hover:text-cyan-300 underline decoration-cyan-400/50 underline-offset-2 truncate w-full text-right cursor-pointer"
+                                            title="اضغط لإرسال رسالة للموظف"
+                                        >
+                                            {u.name}
+                                        </button>
+                                    </div>
+
+                                    {/* المستخدم: في الهاتف يظهر باللغة العربية وعند الضغط عليه يفتح نافذة إرسال رسالة */}
+                                    <div className="col-span-5 sm:col-span-3 min-w-0 text-right">
+                                        <button
+                                            type="button"
+                                            onClick={() => setEmployeeActionModal(u)}
+                                            className="sm:hidden font-black text-xs text-white hover:text-cyan-300 underline decoration-cyan-400/50 underline-offset-2 truncate w-full text-right cursor-pointer"
+                                            title="اضغط لإرسال رسالة للموظف"
+                                        >
+                                            {mobileArabicLabel}
+                                        </button>
+                                        <span className="hidden sm:block text-sm text-gray-300 truncate">
+                                            {u.username}
+                                        </span>
+                                    </div>
+
+                                    {/* الدور */}
+                                    <div className="col-span-2 sm:col-span-2 text-center min-w-0">
+                                        <span className={`inline-block px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-bold truncate max-w-full ${u.role === 'admin' ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'}`}>
                                             {getRoleLabel(u.role)}
                                         </span>
-                                    </td>
-                                    <td className="p-3 flex justify-center gap-1 md:gap-2">
-                                        <button onClick={() => setRoleModal(u)} className="p-2 text-purple-400 hover:bg-purple-400/10 rounded" title="تعديل المسمى الوظيفي"><Edit2 size={16}/></button>
-                                        <button onClick={() => setNotifModal({username: u.username, name: u.name})} className="p-2 text-green-400 hover:bg-green-400/10 rounded" title="إرسال رسالة تنبيه"><Send size={16}/></button>
-                                        <button onClick={() => setPermModal(u)} className="p-2 text-blue-400 hover:bg-blue-400/10 rounded permission-btn" title="تعديل صلاحيات الأقسام"><Shield size={16}/></button>
-                                        <button onClick={() => setPassModal({key: u.key!, name: u.name})} className="p-2 text-orange-400 hover:bg-orange-400/10 rounded" title="تغيير كلمة المرور"><Key size={16}/></button>
-                                        <button onClick={() => handleDeleteUser(u.key!)} className="p-2 text-red-400 hover:bg-red-400/10 rounded" title="حذف الحساب"><Trash2 size={16}/></button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                                    </div>
+
+                                    {/* الإجراءات: في سطر واحد داخل البوكس بدون اختفاء أي جزء من الأزرار نهائياً */}
+                                    <div className="col-span-5 sm:col-span-4 flex items-center justify-center gap-1 sm:gap-2 min-w-0">
+                                        {!isVirtualAdmin && (
+                                            <button onClick={() => setRoleModal(u)} className="p-1.5 sm:p-2 text-purple-400 hover:bg-purple-400/10 rounded-lg transition shrink-0" title="تعديل المسمى الوظيفي">
+                                                <Edit2 size={15} className="sm:w-4 sm:h-4"/>
+                                            </button>
+                                        )}
+                                        <button onClick={() => setPermModal(u)} className="p-1.5 sm:p-2 text-blue-400 hover:bg-blue-400/10 rounded-lg permission-btn transition shrink-0" title="تعديل صلاحيات الأقسام والشريط السفلي">
+                                            <Shield size={15} className="sm:w-4 sm:h-4"/>
+                                        </button>
+                                        {!isVirtualAdmin && (
+                                            <>
+                                                <button onClick={() => setPassModal({key: u.key!, name: u.name})} className="p-1.5 sm:p-2 text-orange-400 hover:bg-orange-400/10 rounded-lg transition shrink-0" title="تغيير كلمة المرور">
+                                                    <Key size={15} className="sm:w-4 sm:h-4"/>
+                                                </button>
+                                                <button onClick={() => handleDeleteUser(u.key!)} className="p-1.5 sm:p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition shrink-0" title="حذف الحساب">
+                                                    <Trash2 size={15} className="sm:w-4 sm:h-4"/>
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
             </div>
+
+            {/* نافذة عند الضغط على اسم الموظف تحتوي على زر إرسال رسالة */}
+            {employeeActionModal && (
+                <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-gray-900 p-5 rounded-2xl border border-white/15 w-full max-w-sm shadow-2xl space-y-4 text-right animate-in zoom-in-95">
+                        <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                            <h4 className="font-black text-base text-white">{employeeActionModal.name}</h4>
+                            <button onClick={() => setEmployeeActionModal(null)} className="text-white/60 hover:text-white p-1">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="text-xs text-gray-300 space-y-1">
+                            <div>اسم المستخدم: <strong className="text-white">{employeeActionModal.username}</strong></div>
+                            <div>المسمى الوظيفي: <strong className="text-blue-300">{getRoleLabel(employeeActionModal.role)}</strong></div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const target = { username: employeeActionModal.username, name: employeeActionModal.name };
+                                setEmployeeActionModal(null);
+                                setNotifModal(target);
+                            }}
+                            className="w-full bg-green-600 hover:bg-green-500 text-white py-3 rounded-xl font-black flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
+                        >
+                            <Send size={17} />
+                            <span>إرسال رسالة</span>
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* بقية النوافذ المنبثقة (كلمة السر، التنبيهات، الصلاحيات) */}
             {roleModal && (
@@ -698,61 +1007,136 @@ const Settings: React.FC<Props> = ({ user, settings, markets, theme, setTheme })
             )}
 
             {permModal && (
-                <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black/80 flex items-center justify-center p-4 overflow-y-auto">
-                    <div className="bg-gray-900 p-6 rounded-2xl border border-white/10 w-full max-w-xl my-auto shadow-2xl">
-                        <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
-                            <h4 className="font-bold text-white flex items-center gap-2 text-base sm:text-lg">
-                                <Shield className="text-blue-500" size={20}/> تعديل صلاحيات الأقسام: {permModal.name}
+                <div className="fixed top-0 left-0 w-full h-full z-[9999] bg-black/80 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+                    <div className="bg-gray-900 p-4 sm:p-6 rounded-2xl border border-white/10 w-full max-w-xl my-auto shadow-2xl max-h-[94vh] flex flex-col">
+                        <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-3 shrink-0">
+                            <h4 className="font-bold text-white flex items-center gap-2 text-sm sm:text-lg">
+                                <Shield className="text-blue-500" size={20}/> تعديل صلاحيات الأقسام والشريط السفلي: {permModal.name}
                             </h4>
                             <button onClick={() => setPermModal(null)} className="text-white/50 hover:text-white p-1">
                                 <X size={20}/>
                             </button>
                         </div>
 
-                        <div className="flex items-center justify-between gap-2 mb-4 bg-white/5 p-2.5 rounded-xl text-xs">
-                            <span className="text-gray-300 font-bold">إجراءات سريعة:</span>
-                            <div className="flex items-center gap-2">
-                                <button 
-                                    onClick={() => handleSetAllPerms(true)}
-                                    className="bg-blue-600/30 hover:bg-blue-600 text-blue-300 hover:text-white px-3 py-1.5 rounded-lg font-bold transition text-xs"
-                                >
-                                    تحديد الكل
-                                </button>
-                                <button 
-                                    onClick={() => handleSetAllPerms(false)}
-                                    className="bg-red-600/30 hover:bg-red-600 text-red-300 hover:text-white px-3 py-1.5 rounded-lg font-bold transition text-xs"
-                                >
-                                    إلغاء تحديد الكل
-                                </button>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pr-1 pl-1">
+                            {permModal.role !== 'admin' && permModal.key !== 'admin_root' && (
+                                <>
+                                    <div className="flex items-center justify-between gap-2 bg-white/5 p-2.5 rounded-xl text-xs">
+                                        <span className="text-gray-300 font-bold">صلاحيات القائمة الجانبية:</span>
+                                        <div className="flex items-center gap-2">
+                                            <button 
+                                                onClick={() => handleSetAllPerms(true)}
+                                                className="bg-blue-600/30 hover:bg-blue-600 text-blue-300 hover:text-white px-3 py-1.5 rounded-lg font-bold transition text-xs"
+                                            >
+                                                تحديد الكل
+                                            </button>
+                                            <button 
+                                                onClick={() => handleSetAllPerms(false)}
+                                                className="bg-red-600/30 hover:bg-red-600 text-red-300 hover:text-white px-3 py-1.5 rounded-lg font-bold transition text-xs"
+                                            >
+                                                إلغاء تحديد الكل
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        {ALL_SIDE_TABS.map(item => {
+                                            const isEnabled = !!(permModal.permissions as any)?.[item.key];
+                                            return (
+                                                <button 
+                                                    key={item.key} 
+                                                    onClick={() => toggleUserPerm(item.key as any)}
+                                                    className={`p-2.5 sm:p-3 rounded-xl border text-xs sm:text-sm font-bold flex justify-between items-center transition cursor-pointer select-none active:scale-[0.98] ${ isEnabled ? 'bg-blue-600/20 border-blue-500 text-white shadow-sm' : 'bg-white/5 border-white/5 text-white/40 hover:bg-white/10 hover:text-white/70'}`}
+                                                >
+                                                    <span className="truncate">{item.label}</span>
+                                                    {isEnabled ? <ToggleRight size={22} className="text-blue-400 shrink-0"/> : <ToggleLeft size={22} className="shrink-0 text-white/30"/>}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            )}
+
+                            {/* التحكم في أزرار الشريط السفلي لنسخة الهاتف (إظهار/إخفاء + ترتيب من اليمين إلى اليسار) */}
+                            <div className="border-t border-white/10 pt-3 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                    <h5 className="font-black text-xs sm:text-sm text-cyan-300 flex items-center gap-1.5">
+                                        <Smartphone size={16} className="text-cyan-400" />
+                                        <span>أزرار الشريط السفلي في الهاتف (من اليمين إلى اليسار):</span>
+                                    </h5>
+                                    <span className="text-[10px] text-gray-400 font-bold">إظهار / إخفاء وترتيب</span>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    {getModalBottomBarList(permModal).map((btnItem, idx, arr) => {
+                                        const hidden = isBottomBarItemHidden(permModal, btnItem.id);
+                                        return (
+                                            <div
+                                                key={btnItem.id}
+                                                className={`flex items-center justify-between gap-2 p-2.5 rounded-xl border transition ${
+                                                    !hidden
+                                                        ? 'bg-cyan-950/30 border-cyan-500/40 text-white'
+                                                        : 'bg-white/5 border-white/10 text-gray-400 opacity-60'
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <span className="w-6 h-6 rounded-lg bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-[11px] font-black flex items-center justify-center shrink-0">
+                                                        {idx + 1}
+                                                    </span>
+                                                    <span className="font-bold text-xs sm:text-sm truncate">{btnItem.label}</span>
+                                                </div>
+
+                                                <div className="flex items-center gap-1 shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        disabled={idx === 0}
+                                                        onClick={() => moveBottomBarItemOrder(idx, 'right')}
+                                                        className="px-2 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 disabled:opacity-30 text-white text-[10px] font-bold flex items-center gap-0.5 cursor-pointer"
+                                                        title="تحريك لليمين (قبل)"
+                                                    >
+                                                        <ArrowRight size={12} />
+                                                        <span>يمين</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={idx === arr.length - 1}
+                                                        onClick={() => moveBottomBarItemOrder(idx, 'left')}
+                                                        className="px-2 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 disabled:opacity-30 text-white text-[10px] font-bold flex items-center gap-0.5 cursor-pointer"
+                                                        title="تحريك لليسار (بعد)"
+                                                    >
+                                                        <span>يسار</span>
+                                                        <ArrowLeft size={12} />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => toggleBottomBarItemVisibility(btnItem.id)}
+                                                        className={`px-2.5 py-1 rounded-lg text-[11px] font-black flex items-center gap-1 cursor-pointer transition ${
+                                                            !hidden
+                                                                ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40'
+                                                                : 'bg-red-600/20 text-red-300 border border-red-500/30'
+                                                        }`}
+                                                    >
+                                                        {!hidden ? <Eye size={13} /> : <EyeOff size={13} />}
+                                                        <span>{!hidden ? 'يظهر' : 'مخفي'}</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-5 max-h-[60vh] overflow-y-auto custom-scrollbar p-1">
-                            {ALL_SIDE_TABS.map(item => {
-                                const isEnabled = !!(permModal.permissions as any)?.[item.key];
-                                return (
-                                    <button 
-                                        key={item.key} 
-                                        onClick={() => toggleUserPerm(item.key as any)}
-                                        className={`p-3 rounded-xl border text-sm font-bold flex justify-between items-center transition cursor-pointer select-none active:scale-[0.98] ${ isEnabled ? 'bg-blue-600/20 border-blue-500 text-white shadow-sm' : 'bg-white/5 border-white/5 text-white/40 hover:bg-white/10 hover:text-white/70'}`}
-                                    >
-                                        <span className="truncate">{item.label}</span>
-                                        {isEnabled ? <ToggleRight size={22} className="text-blue-400 shrink-0"/> : <ToggleLeft size={22} className="shrink-0 text-white/30"/>}
-                                    </button>
-                                );
-                            })}
-                        </div>
-
-                        <div className="text-[11px] text-blue-300/80 mb-4 bg-blue-950/40 border border-blue-500/20 p-2.5 rounded-xl flex items-center gap-2">
+                        <div className="text-[11px] text-blue-300/80 my-3 bg-blue-950/40 border border-blue-500/20 p-2.5 rounded-xl flex items-center gap-2 shrink-0">
                             <span>⚡</span>
-                            <span>يتم تفعيل الصلاحية وظهور الخانة للموظف لحظياً وفورياً بمجرد تحديدها.</span>
+                            <span>يتم حفظ وتفعيل الصلاحيات وترتيب الشريط السفلي(من اليمين إلى اليسار) للحساب لحظياً وفورياً.</span>
                         </div>
 
-                        <div className="flex gap-2">
-                            <button onClick={handleUpdatePermissions} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-bold shadow-lg active:scale-95 transition cursor-pointer">
+                        <div className="flex gap-2 shrink-0">
+                            <button onClick={handleUpdatePermissions} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2.5 sm:py-3 rounded-xl font-bold shadow-lg active:scale-95 transition cursor-pointer text-sm">
                                 حفظ وإغلاق
                             </button>
-                            <button onClick={() => setPermModal(null)} className="flex-1 bg-white/5 hover:bg-white/10 text-white py-3 rounded-xl cursor-pointer transition">
+                            <button onClick={() => setPermModal(null)} className="flex-1 bg-white/5 hover:bg-white/10 text-white py-2.5 sm:py-3 rounded-xl cursor-pointer transition text-sm">
                                 إلغاء
                             </button>
                         </div>

@@ -797,9 +797,9 @@ const DailySales: React.FC<Props> = ({ user, markets, theme, products }) => {
                 </div>
             ))}
             
-            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 w-full max-w-md px-4 z-50">
-                <button onClick={handleSave} className="w-full bg-green-600 hover:bg-green-700 text-white py-4 rounded-3xl font-black shadow-2xl flex justify-center items-center gap-2 transform active:scale-95 transition">
-                    <Save size={20} /> حفظ وترحيل المبيعات
+            <div className="fixed bottom-16 md:bottom-4 left-1/2 -translate-x-1/2 z-50 px-2">
+                <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white py-2 px-5 sm:py-2.5 sm:px-6 rounded-2xl text-xs sm:text-sm font-black shadow-2xl flex justify-center items-center gap-1.5 whitespace-nowrap transform active:scale-95 transition cursor-pointer">
+                    <Save size={16} /> حفظ وترحيل
                 </button>
             </div>
 
